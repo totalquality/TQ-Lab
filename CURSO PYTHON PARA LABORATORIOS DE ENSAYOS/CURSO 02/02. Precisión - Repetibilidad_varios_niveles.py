@@ -1,7 +1,5 @@
 # ============================================================
 # AUTOMATIZACIÓN DE PRECISIÓN
-# REPETIBILIDAD - CAMERO
-#
 # Sr por nivel
 # %RSD por nivel
 # Regresión %RSD vs concentración
