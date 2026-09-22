@@ -202,7 +202,7 @@ print("=" * 75)
 # ============================================================
 
 modelo = ols(
-    "Resultado ~ C(Analista) * C(Dia)",
+    "Resultado ~ Analista * Dia",
     data=df
 ).fit()
 
@@ -1108,9 +1108,9 @@ modelo_reml = MixedLM.from_formula(
     groups=np.ones(len(df_reml)),
     re_formula="0",
     vc_formula={
-        "Analista": "0 + C(Analista)",
-        "Dia": "0 + C(Dia)",
-        "Analista_Dia": "0 + C(Analista_Dia)"
+        "Analista": "0 + Analista",
+        "Dia": "0 + Dia",
+        "Analista_Dia": "0 + Analista_Dia"
     },
     data=df_reml
 )
@@ -1364,3 +1364,232 @@ print(
     "varianza; no corresponde a una suma de cuadrados Tipo I o Tipo III."
 )
 
+# ============================================================
+# 12. EVALUACIÓN DE PRECISIÓN INTERMEDIA FRENTE A HORWITZ
+# ============================================================
+#
+# Para PRECISIÓN INTERMEDIA se utiliza:
+#
+#     PRSD_intermedia = (2/3) × PRSDR
+#
+# donde:
+#
+#     PRSDR = 2 × C_muestra^(-0.15)
+#
+# La evaluación se realiza para UN SOLO NIVEL DE CONCENTRACIÓN.
+#
+# Para HorRat(r) se mantiene el criterio solicitado:
+#
+#     0.3 ≤ HorRat(r) ≤ 1.3
+#
+# IMPORTANTE:
+# La variable C_muestra NO se llama C para no interferir con
+# funciones/nombres utilizados por Patsy en fórmulas estadísticas.
+# Además, el modelo anterior fue escrito sin C(...): las columnas
+# Analista y Dia ya son categóricas, por lo que Patsy las trata
+# como factores automáticamente.
+# ============================================================
+
+print("\n\n")
+print("=" * 105)
+print("EVALUACIÓN DE PRECISIÓN INTERMEDIA FRENTE A HORWITZ")
+print("=" * 105)
+
+print("\nSeleccione la estimación de precisión intermedia (SI) que desea evaluar:")
+print("1. Tipo I  — SC secuencial")
+print("2. Tipo III — SC ajustada")
+print("3. REML")
+
+opcion_SI = input("\nIngrese una opción (1, 2 o 3): ").strip()
+
+if opcion_SI == "1":
+    metodo_SI = "Tipo I — SC secuencial"
+    varianza_SI = float(varianza_SI_tipo_I)
+    SD_SI = float(SD_SI_tipo_I)
+elif opcion_SI == "2":
+    metodo_SI = "Tipo III — SC ajustada"
+    varianza_SI = float(varianza_SI_tipo_III)
+    SD_SI = float(SD_SI_tipo_III)
+elif opcion_SI == "3":
+    metodo_SI = "REML"
+    varianza_SI = float(varianza_SI_REML)
+    SD_SI = float(SD_SI_REML)
+else:
+    raise ValueError("Debe seleccionar 1, 2 o 3.")
+
+print("\nEstimación seleccionada:", metodo_SI)
+print(f"Desviación estándar de precisión intermedia (SI) = {SD_SI:.6f}")
+
+# ------------------------------------------------------------
+# 12.1 CONCENTRACIÓN DE EVALUACIÓN
+# ------------------------------------------------------------
+
+concentracion_muestra = float(
+    input("\nIngrese la concentración del nivel de evaluación: ").replace(",", ".")
+)
+
+if concentracion_muestra <= 0:
+    raise ValueError("La concentración debe ser mayor que cero.")
+
+# ------------------------------------------------------------
+# 12.2 UNIDAD
+# ------------------------------------------------------------
+
+print("\nSeleccione la unidad de concentración:")
+print("1. ppm")
+print("2. ppb")
+print("3. %")
+
+opcion_unidad = input("Ingrese una opción (1, 2 o 3): ").strip()
+
+if opcion_unidad == "1":
+    unidad = "ppm"
+    factor_masico = 10 ** (-6)
+elif opcion_unidad == "2":
+    unidad = "ppb"
+    factor_masico = 10 ** (-9)
+elif opcion_unidad == "3":
+    unidad = "%"
+    factor_masico = 10 ** (-2)
+else:
+    raise ValueError("Debe seleccionar 1, 2 o 3.")
+
+# ------------------------------------------------------------
+# 12.3 CÁLCULO DE RSD EXPERIMENTAL
+# ------------------------------------------------------------
+
+RSD_SI = (
+    SD_SI / concentracion_muestra
+) * 100
+
+# ------------------------------------------------------------
+# 12.4 CONVERSIÓN A FRACCIÓN MÁSICA
+# ------------------------------------------------------------
+#
+# NO utilizar una variable llamada C.
+# Esto evita cualquier conflicto con nombres/factores de Patsy.
+# ------------------------------------------------------------
+
+C_muestra = (
+    concentracion_muestra * factor_masico
+)
+
+if C_muestra <= 0:
+    raise ValueError("La fracción másica de la concentración debe ser mayor que cero.")
+
+# ------------------------------------------------------------
+# 12.5 HORWITZ — REPRODUCIBILIDAD
+# ------------------------------------------------------------
+
+PRSDR = (
+    2 * C_muestra ** (-0.15)
+)
+
+# ------------------------------------------------------------
+# 12.6 PRECISIÓN INTERMEDIA
+# ------------------------------------------------------------
+#
+# Para precisión intermedia:
+#
+#     PRSD_intermedia = (2/3) × PRSDR
+# ------------------------------------------------------------
+
+factor_intermedia = 2 / 3
+
+PRSD_intermedia = (
+    factor_intermedia * PRSDR
+)
+
+# ------------------------------------------------------------
+# 12.7 HORRAT(r)
+# ------------------------------------------------------------
+#
+# Se utiliza el mismo criterio solicitado para repetibilidad:
+#
+#     0.3 ≤ HorRat(r) ≤ 1.3
+#
+# El denominador es PRSDR.
+# ------------------------------------------------------------
+
+HorRat_r = (
+    RSD_SI / PRSDR
+)
+
+if 0.3 <= HorRat_r <= 1.3:
+    conclusion_HorRat = "CUMPLE"
+else:
+    conclusion_HorRat = "NO CUMPLE"
+
+if RSD_SI <= PRSD_intermedia:
+    conclusion_PRSD = "CUMPLE"
+else:
+    conclusion_PRSD = "NO CUMPLE"
+
+# ------------------------------------------------------------
+# 12.8 REPORTE FINAL
+# ------------------------------------------------------------
+
+print("\n")
+print("=" * 105)
+print("RESULTADO FINAL — PRECISIÓN INTERMEDIA")
+print("=" * 105)
+
+print(f"\nMétodo de estimación SI:       {metodo_SI}")
+print(f"Varianza SI:                   {varianza_SI:.8f}")
+print(f"Desviación estándar SI:        {SD_SI:.8f}")
+print(f"Concentración evaluada:        {concentracion_muestra:.6g} {unidad}")
+print(f"Fracción másica C_muestra:     {C_muestra:.6e}")
+print(f"RSD experimental SI:           {RSD_SI:.6f} %")
+print(f"PRSDR de Horwitz:              {PRSDR:.6f} %")
+print(f"Factor para intermedia:        2/3 = {factor_intermedia:.6f}")
+print(f"PRSD intermedia (2/3×PRSDR):   {PRSD_intermedia:.6f} %")
+print(f"HorRat(r):                     {HorRat_r:.6f}")
+print("Criterio HorRat(r):            0.3 ≤ HorRat(r) ≤ 1.3")
+print(f"Resultado HorRat(r):            {conclusion_HorRat}")
+print(f"Resultado frente a (2/3)×PRSDR: {conclusion_PRSD}")
+
+print("\n" + "-" * 105)
+print("TABLA RESUMEN")
+print("-" * 105)
+
+resumen_intermedia = pd.DataFrame({
+    "Concepto": [
+        "Método SI",
+        "Concentración",
+        "Unidad",
+        "Desviación estándar SI",
+        "%RSD experimental SI",
+        "Fracción másica C_muestra",
+        "PRSDR Horwitz",
+        "Factor precisión intermedia",
+        "PRSD intermedia",
+        "HorRat(r)",
+        "Criterio HorRat(r)",
+        "Resultado HorRat(r)",
+        "Resultado frente a (2/3)×PRSDR"
+    ],
+    "Resultado": [
+        metodo_SI,
+        f"{concentracion_muestra:.6g}",
+        unidad,
+        f"{SD_SI:.8f}",
+        f"{RSD_SI:.6f} %",
+        f"{C_muestra:.6e}",
+        f"{PRSDR:.6f} %",
+        "2/3",
+        f"{PRSD_intermedia:.6f} %",
+        f"{HorRat_r:.6f}",
+        "0.3 ≤ HorRat(r) ≤ 1.3",
+        conclusion_HorRat,
+        conclusion_PRSD
+    ]
+})
+
+display(resumen_intermedia)
+
+print("\n")
+print("NOTA:")
+print("La evaluación de Horwitz y HorRat(r) se realizó únicamente")
+print("para la concentración indicada por el usuario.")
+print("Para precisión intermedia se utilizó el factor 2/3 de PRSDR.")
+print("El criterio solicitado para HorRat(r) es 0.3 ≤ HorRat(r) ≤ 1.3.")
