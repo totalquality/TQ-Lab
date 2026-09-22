@@ -20,6 +20,9 @@
 #
 # La lógica de regresión es la misma del script de repetibilidad
 # proporcionado: únicamente se reemplaza Sr por SI.
+#
+# IMPORTANTE: no se utiliza C(...) en las fórmulas de Patsy, para evitar
+# conflictos si el usuario tiene una variable llamada C definida en Jupyter.
 # ============================================================
 
 
@@ -1914,16 +1917,17 @@ print(
 )
 
 
+
 # ============================================================
 # 17. CONCENTRACIÓN DE LA MUESTRA
 # ============================================================
 
 print("\n")
-print("=" * 80)
+print("=" * 85)
 print(
-    "CÁLCULO DE SI PARA UNA MUESTRA"
+    "CÁLCULO DE SI PARA UNA MUESTRA Y EVALUACIÓN HORWITZ"
 )
-print("=" * 80)
+print("=" * 85)
 
 concentracion_muestra = float(
     input(
@@ -1931,22 +1935,78 @@ concentracion_muestra = float(
     )
 )
 
+if concentracion_muestra <= 0:
+    raise ValueError(
+        "La concentración de la muestra debe ser > 0."
+    )
+
 
 # ============================================================
-# 18. %RSD ESTIMADO
+# 18. UNIDAD DE LA CONCENTRACIÓN
+# ============================================================
+
+print("\n")
+print("Seleccione la unidad de la concentración:")
+print("1. ppm")
+print("2. ppb")
+print("3. %")
+
+opcion_unidad = int(
+    input(
+        "\nIngrese el número de la unidad: "
+    )
+)
+
+if opcion_unidad == 1:
+
+    unidad = "ppm"
+    factor_masico = 1e-6
+
+elif opcion_unidad == 2:
+
+    unidad = "ppb"
+    factor_masico = 1e-9
+
+elif opcion_unidad == 3:
+
+    unidad = "%"
+    factor_masico = 1e-2
+
+else:
+
+    raise ValueError(
+        "La opción de unidad no es válida."
+    )
+
+
+# ============================================================
+# 19. %RSD ESTIMADO
 # ============================================================
 
 funcion = (
     seleccionado["Funcion"]
 )
 
-rsd_muestra = funcion(
-    concentracion_muestra
+rsd_muestra = float(
+    funcion(
+        concentracion_muestra
+    )
 )
+
+if not np.isfinite(rsd_muestra):
+    raise ValueError(
+        "El modelo seleccionado produjo un %RSD no válido "
+        "para la concentración de evaluación."
+    )
+
+if rsd_muestra < 0:
+    raise ValueError(
+        "El modelo seleccionado produjo un %RSD negativo."
+    )
 
 
 # ============================================================
-# 19. SI ESTIMADA
+# 20. SI ESTIMADA
 # ============================================================
 
 SI_muestra = (
@@ -1954,20 +2014,114 @@ SI_muestra = (
     * concentracion_muestra
 ) / 100
 
-
 SI2_muestra = (
     SI_muestra ** 2
 )
 
 
 # ============================================================
-# 20. RESULTADO FINAL
+# 21. EVALUACIÓN SEGÚN HORWITZ
+# ============================================================
+
+# Conversión de la concentración de evaluación a fracción másica.
+#
+# ppm -> 10^-6
+# ppb -> 10^-9
+# %   -> 10^-2
+#
+# IMPORTANTE:
+# No utilizar el nombre "C" para esta variable.
+# En Jupyter, C puede existir previamente como un número y
+# provocar el error:
+# TypeError: 'float' object is not callable
+# al interpretar fórmulas de Patsy como C(Analista).
+#
+# Por ello se utiliza C_muestra.
+
+C_muestra = (
+    concentracion_muestra
+    * factor_masico
+)
+
+# ------------------------------------------------------------
+# PRSDR de Horwitz — reproducibilidad
+# ------------------------------------------------------------
+
+PRSDR = (
+    2
+    * C_muestra ** (-0.15)
+)
+
+# ------------------------------------------------------------
+# Precisión intermedia esperada
+#
+# Para precisión intermedia se utiliza el factor 2/3.
+# ------------------------------------------------------------
+
+factor_intermedia = (
+    2 / 3
+)
+
+PRSD_intermedia = (
+    factor_intermedia
+    * PRSDR
+)
+
+# ------------------------------------------------------------
+# %RSD experimental/estimado de precisión intermedia
+# ------------------------------------------------------------
+
+RSD_intermedia = (
+    rsd_muestra
+)
+
+# ------------------------------------------------------------
+# HorRat(r)
+#
+# Se mantiene el mismo criterio utilizado en repetibilidad:
+#
+# HorRat(r) = %RSD_intermedia / PRSDR
+#
+# Criterio:
+# 0,3 <= HorRat(r) <= 1,3
+#
+# Nota:
+# El denominador se mantiene como PRSDR, tal como se definió
+# para la evaluación solicitada.
+# ------------------------------------------------------------
+
+HorRat_r = (
+    RSD_intermedia
+    / PRSDR
+)
+
+# ------------------------------------------------------------
+# Evaluación del %RSD frente al objetivo de precisión
+# intermedia basado en 2/3 de PRSDR.
+# ------------------------------------------------------------
+
+cumple_precision_intermedia = (
+    RSD_intermedia
+    <= PRSD_intermedia
+)
+
+cumple_HorRat = (
+    0.3
+    <= HorRat_r
+    <= 1.3
+)
+
+
+# ============================================================
+# 22. RESULTADO FINAL
 # ============================================================
 
 print("\n")
-print("#" * 90)
-print("RESULTADO FINAL — PRECISIÓN INTERMEDIA")
-print("#" * 90)
+print("#" * 100)
+print(
+    "RESULTADO FINAL — PRECISIÓN INTERMEDIA"
+)
+print("#" * 100)
 
 print(
     f"Estimación utilizada: "
@@ -1985,13 +2139,18 @@ print(
 )
 
 print(
+    f"R²: "
+    f"{seleccionado['R²']:.6f}"
+)
+
+print(
     f"Concentración de la muestra: "
-    f"{concentracion_muestra:.6f}"
+    f"{concentracion_muestra:.6f} {unidad}"
 )
 
 print(
     f"%RSD de precisión intermedia estimado: "
-    f"{rsd_muestra:.6f} %"
+    f"{RSD_intermedia:.6f} %"
 )
 
 print(
@@ -2001,13 +2160,132 @@ print(
 
 print(
     f"SI estimada: "
-    f"{SI_muestra:.7f}"
+    f"{SI_muestra:.7f} {unidad}"
 )
 
 print("\n")
-print("=" * 90)
+print("-" * 100)
+print("EVALUACIÓN SEGÚN HORWITZ")
+print("-" * 100)
+
+print(
+    f"Concentración como fracción másica (C_muestra): "
+    f"{C_muestra:.12g}"
+)
+
+print(
+    f"PRSDR — reproducibilidad de Horwitz: "
+    f"{PRSDR:.6f} %"
+)
+
+print(
+    f"Factor para precisión intermedia: "
+    f"{factor_intermedia:.6f}  (2/3)"
+)
+
+print(
+    f"PRSD intermedia = (2/3) × PRSDR: "
+    f"{PRSD_intermedia:.6f} %"
+)
+
+print(
+    f"HorRat(r) = %RSD intermedia / PRSDR: "
+    f"{HorRat_r:.6f}"
+)
+
+print("\n")
+print(
+    "Evaluación de precisión intermedia:"
+)
+
+if cumple_precision_intermedia:
+
+    print(
+        "✓ CUMPLE: %RSD de precisión intermedia "
+        "≤ PRSD intermedia."
+    )
+
+else:
+
+    print(
+        "✗ NO CUMPLE: %RSD de precisión intermedia "
+        "> PRSD intermedia."
+    )
+
+
+print("\n")
+print(
+    "Evaluación de HorRat(r):"
+)
+
+if cumple_HorRat:
+
+    print(
+        "✓ CUMPLE: 0,3 ≤ HorRat(r) ≤ 1,3."
+    )
+
+else:
+
+    print(
+        "✗ NO CUMPLE: HorRat(r) está fuera del intervalo "
+        "0,3–1,3."
+    )
+
+
+# ------------------------------------------------------------
+# Resumen final
+# ------------------------------------------------------------
+
+tabla_final = pd.DataFrame(
+    {
+        "Parámetro": [
+            "Concentración de evaluación",
+            "Unidad",
+            "Estimación SI utilizada",
+            "Modelo",
+            "%RSD precisión intermedia",
+            "SI² estimada",
+            "SI estimada",
+            "PRSDR Horwitz",
+            "Factor precisión intermedia",
+            "PRSD intermedia",
+            "HorRat(r)",
+            "Criterio %RSD ≤ PRSD intermedia",
+            "Criterio HorRat(r) 0,3–1,3"
+        ],
+
+        "Resultado": [
+            concentracion_muestra,
+            unidad,
+            metodo_SI,
+            seleccionado["Modelo"],
+            RSD_intermedia,
+            SI2_muestra,
+            SI_muestra,
+            PRSDR,
+            factor_intermedia,
+            PRSD_intermedia,
+            HorRat_r,
+            "CUMPLE" if cumple_precision_intermedia
+            else "NO CUMPLE",
+            "CUMPLE" if cumple_HorRat
+            else "NO CUMPLE"
+        ]
+    }
+)
+
+print("\n")
+print("-" * 100)
+print("RESUMEN FINAL")
+print("-" * 100)
+
+display(
+    tabla_final
+)
+
+print("\n")
+print("=" * 100)
 print(
     "FIN DEL ANÁLISIS DE PRECISIÓN INTERMEDIA"
 )
-print("=" * 90)
-
+print("=" * 100)
