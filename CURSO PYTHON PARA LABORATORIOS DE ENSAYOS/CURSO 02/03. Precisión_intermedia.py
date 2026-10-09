@@ -37,12 +37,20 @@
 
 
 import warnings
+import json
 from pathlib import Path
 
 import pandas as pd
 import numpy as np
 
 from statsmodels.regression.mixed_linear_model import MixedLM
+
+
+def dataframe_a_registros(df):
+    """Convierte un DataFrame en registros aptos para exportar a JSON."""
+    return df.to_dict(orient="records")
+
+
 
 
 # ============================================================
@@ -1442,7 +1450,56 @@ for numero_nivel, nombre_nivel in enumerate(
             conclusion_horrat,
 
         "Resultado (2/3)×PRSDR":
-            conclusion_objetivo
+            conclusion_objetivo,
+
+        "Fracción másica C":
+            C_nivel,
+
+        "%RSD Horwitz — precisión intermedia":
+            PRSD_intermedia,
+
+        "Criterio HorRat(r)":
+            {"minimo": 0.3, "maximo": 1.3},
+
+        "Criterio precisión intermedia":
+            "%RSD precisión intermedia <= (2/3) × PRSDR",
+
+        "Cumple_HorRat":
+            conclusion_horrat == "PASA",
+
+        "Cumple_objetivo_intermedia":
+            conclusion_objetivo == "PASA",
+
+        "Estado_nivel":
+            "CUMPLE" if (
+                conclusion_horrat == "PASA"
+                and conclusion_objetivo == "PASA"
+            ) else "NO CUMPLE",
+
+        "Estimaciones_SI":
+            {
+                "Tipo I — SC secuencial": {
+                    "varianza_SI": float(resultado_tipo_I["varianza_SI"]),
+                    "SI": float(resultado_tipo_I["SI"]),
+                    "componentes": dataframe_a_registros(
+                        resultado_tipo_I["componentes"]
+                    )
+                },
+                "Tipo III — SC ajustada": {
+                    "varianza_SI": float(resultado_tipo_III["varianza_SI"]),
+                    "SI": float(resultado_tipo_III["SI"]),
+                    "componentes": dataframe_a_registros(
+                        resultado_tipo_III["componentes"]
+                    )
+                },
+                "REML": {
+                    "varianza_SI": float(resultado_REML["varianza_SI"]),
+                    "SI": float(resultado_REML["SI"]),
+                    "componentes": dataframe_a_registros(
+                        resultado_REML["componentes"]
+                    )
+                }
+            }
     })
 
 
@@ -1493,6 +1550,67 @@ else:
     print(
         "No se obtuvieron resultados para ningún nivel."
     )
+
+
+# ============================================================
+# 13.1 EXPORTAR RESULTADOS A JSON (SIN FECHA NI HORA)
+# ============================================================
+
+niveles_evaluados = len(resultados_finales)
+niveles_cumplen = sum(
+    1 for r in resultados_finales
+    if r["Estado_nivel"] == "CUMPLE"
+)
+niveles_no_cumplen = sum(
+    1 for r in resultados_finales
+    if r["Estado_nivel"] == "NO CUMPLE"
+)
+
+if niveles_evaluados == 0:
+    estado_global = "EVALUACIÓN INCOMPLETA"
+    conclusion_global = "No se obtuvieron resultados evaluables."
+elif niveles_cumplen == niveles_evaluados:
+    estado_global = "CUMPLE"
+    conclusion_global = "Todos los niveles evaluados cumplen ambos criterios de precisión intermedia."
+else:
+    estado_global = "NO CUMPLE"
+    conclusion_global = (
+        "Uno o más niveles no cumplen todos los criterios de precisión intermedia. "
+        "Revisar los resultados individuales antes de concluir."
+    )
+
+datos_json = {
+    "schema_version": "1.0",
+    "parametro": "Precisión intermedia",
+    "archivo_datos": str(archivo),
+    "numero_niveles_detectados": len(nombres_niveles),
+    "numero_niveles_evaluados": niveles_evaluados,
+    "criterios_generales": {
+        "horrat_r": {"minimo": 0.3, "maximo": 1.3},
+        "precision_intermedia_horwitz": "%RSD de precisión intermedia <= (2/3) × PRSDR",
+        "prsd_reproducibilidad": "PRSDR = 2 × C^(-0.15)",
+        "prsd_precision_intermedia": "PRSD_intermedia = (2/3) × PRSDR"
+    },
+    "estado_global": estado_global,
+    "conclusion_global": conclusion_global,
+    "resumen": {
+        "niveles_cumplen": niveles_cumplen,
+        "niveles_no_cumplen": niveles_no_cumplen
+    },
+    "niveles": resultados_finales
+}
+
+ruta_json = Path(archivo).with_name("resultados_precision_intermedia.json")
+with ruta_json.open("w", encoding="utf-8") as archivo_json:
+    json.dump(
+        datos_json,
+        archivo_json,
+        ensure_ascii=False,
+        indent=4,
+        default=lambda valor: valor.item() if isinstance(valor, np.generic) else str(valor)
+    )
+
+print(f"Resultados JSON exportados a: {ruta_json}")
 
 
 # ============================================================
