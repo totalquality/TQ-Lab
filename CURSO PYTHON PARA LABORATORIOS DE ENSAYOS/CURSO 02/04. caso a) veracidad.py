@@ -17,6 +17,7 @@
 #
 # ============================================================
 
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -900,41 +901,7 @@ if len(datos_excel) == 0:
 
 
 # ============================================================
-# 8. SELECCIONAR PRUEBA
-# ============================================================
-
-print("=" * 80)
-print("SELECCIÓN DE LA PRUEBA ESTADÍSTICA")
-print("=" * 80)
-
-print()
-
-print(
-    "1 → t de Student de una muestra"
-)
-
-print(
-    "2 → T de Wilcoxon de una muestra"
-)
-
-print()
-
-while True:
-
-    opcion = input(
-        "Seleccione la prueba (1 o 2): "
-    ).strip()
-
-    if opcion in ("1", "2"):
-        break
-
-    print(
-        "Opción no válida. Escriba 1 o 2."
-    )
-
-
-# ============================================================
-# 9. ANALIZAR CADA NIVEL
+# 8. ANALIZAR CADA NIVEL Y SELECCIONAR PRUEBA INDIVIDUAL
 # ============================================================
 
 resultados = []
@@ -949,6 +916,29 @@ for nombre_nivel, hoja in datos_excel.items():
     print("#" * 90)
 
     print()
+
+    # La prueba estadística se selecciona de forma independiente
+    # para cada nivel. Se mantiene intacta la lógica de los cálculos.
+    print("SELECCIÓN DE LA PRUEBA ESTADÍSTICA")
+    print(f"Nivel actual: {nombre_nivel}")
+    print("1 → t de Student de una muestra")
+    print("2 → T de Wilcoxon de una muestra")
+
+    while True:
+        opcion = input(
+            f"[Nivel: {nombre_nivel}] Escriba 1 para t de Student "
+            "o 2 para Wilcoxon: "
+        ).strip()
+
+        if opcion in ("1", "2"):
+            break
+
+        print("Opción no válida. Para este nivel, escriba 1 o 2.")
+
+    prueba_seleccionada = (
+        "t de Student de una muestra" if opcion == "1"
+        else "T de Wilcoxon de una muestra"
+    )
 
     (
         columnas_numericas,
@@ -991,6 +981,10 @@ for nombre_nivel, hoja in datos_excel.items():
             datos,
             referencia
         )
+
+    # Guardar la prueba utilizada en este nivel para que el resumen
+    # y el JSON reflejen la selección individual de cada hoja.
+    resultado["Prueba estadística"] = prueba_seleccionada
 
     resultados.append(
         resultado
@@ -1037,3 +1031,83 @@ print()
 print(
     "Fin del análisis."
 )
+
+
+# ============================================================
+# 11. EXPORTACIÓN JSON PARA INFORME GENERAL
+#     Se conservan los cálculos y decisiones del script original.
+#     No se registran fechas ni horas.
+# ============================================================
+
+import json
+
+def convertir_json(obj):
+    """Convierte tipos NumPy/Pandas a tipos compatibles con JSON."""
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        valor = float(obj)
+        return valor if np.isfinite(valor) else None
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    if pd.isna(obj):
+        return None
+    raise TypeError(f"Tipo no serializable en JSON: {type(obj).__name__}")
+
+resultados_json = []
+
+for resultado in resultados:
+    resultado_json = dict(resultado)
+    resultado_json["prueba_estadistica"] = resultado.get("Prueba estadística")
+    resultado_json["Alfa"] = alpha
+    resultado_json["Criterio de decisión"] = (
+        "p-valor >= alfa: se acepta H0; p-valor < alfa: se rechaza H0"
+    )
+    p = resultado_json.get("p-valor")
+    if p is not None:
+        resultado_json["Estado"] = (
+            "CUMPLE" if p >= alpha else "NO CUMPLE"
+        )
+        resultado_json["Conclusión"] = (
+            "No se evidencian diferencias estadísticamente significativas "
+            "respecto al valor de referencia del MRC."
+            if p >= alpha else
+            "Se evidencian diferencias estadísticamente significativas "
+            "respecto al valor de referencia del MRC."
+        )
+    resultados_json.append(resultado_json)
+
+salida_json = Path(archivo).with_name("resultados_veracidad_mrc.json")
+
+contenido_json = {
+    "schema_version": "1.0",
+    "parametro": "Veracidad - Método A: Material de Referencia Certificado (MRC)",
+    "archivo_datos": str(archivo),
+    "seleccion_prueba": "Individual por nivel; consultar el campo prueba_estadistica de cada nivel.",
+    "pruebas_disponibles": ["t de Student de una muestra", "T de Wilcoxon de una muestra"],
+    "nivel_significancia": alpha,
+    "criterio_decision": {
+        "si_p_mayor_o_igual_alfa": "Se acepta H0",
+        "si_p_menor_alfa": "Se rechaza H0"
+    },
+    "numero_niveles_evaluados": len(resultados_json),
+    "estado_global": (
+        "CUMPLE"
+        if resultados_json and all(r.get("Estado") == "CUMPLE" for r in resultados_json)
+        else "NO CUMPLE"
+        if any(r.get("Estado") == "NO CUMPLE" for r in resultados_json)
+        else "EVALUACIÓN INCOMPLETA"
+    ),
+    "niveles": resultados_json
+}
+
+with open(salida_json, "w", encoding="utf-8") as archivo_json:
+    json.dump(
+        contenido_json,
+        archivo_json,
+        ensure_ascii=False,
+        indent=4,
+        default=convertir_json
+    )
+
+print(f"\nJSON exportado correctamente: {salida_json}")
