@@ -25,6 +25,7 @@
 
 import pandas as pd
 import numpy as np
+import json
 
 
 # ============================================================
@@ -622,8 +623,25 @@ for numero, (nombre_hoja, datos) in enumerate(
         "%RSD Horwitz reproducibilidad": PRSDR,
         "%RSD Horwitz repetibilidad": PRSD_repetibilidad,
         "HorRat(r)": HorRat_r,
+        "Criterio HorRat(r)": {"minimo": 0.3, "maximo": 1.3},
         "Resultado HorRat(r)": conclusion_horrat,
-        "Resultado 0.5×PRSDR": conclusion_objetivo
+        "Criterio repetibilidad": "%RSD experimental <= 0.5 × PRSDR",
+        "Resultado 0.5×PRSDR": conclusion_objetivo,
+        "Cumple_HorRat": bool(conclusion_horrat == "PASA"),
+        "Cumple_objetivo_repetibilidad": bool(conclusion_objetivo == "PASA"),
+        "Estado_nivel": (
+            "CUMPLE"
+            if conclusion_horrat == "PASA" and conclusion_objetivo == "PASA"
+            else "NO CUMPLE"
+        ),
+        "Conclusion": (
+            f"Nivel {nombre_hoja}: "
+            + (
+                "cumple HorRat(r) y el objetivo de repetibilidad."
+                if conclusion_horrat == "PASA" and conclusion_objetivo == "PASA"
+                else "no cumple uno o ambos criterios de repetibilidad."
+            )
+        )
     })
 
 
@@ -666,7 +684,45 @@ else:
 
 
 # ============================================================
-# 10. FIN
+# ============================================================
+# 10. EXPORTAR RESULTADOS ESTANDARIZADOS A JSON
+# ============================================================
+
+# El JSON se guarda junto al Excel de entrada.
+ruta_json = ruta.parent / "resultados_repetibilidad.json"
+
+cumple_global = (
+    bool(resultados_finales)
+    and all(item["Estado_nivel"] == "CUMPLE" for item in resultados_finales)
+)
+
+datos_json = {
+    "schema_version": "1.0",
+    "parametro": "Precisión - Repetibilidad",
+    "archivo_datos": str(ruta),
+    "numero_niveles_detectados": len(datos_excel),
+    "numero_niveles_evaluados": len(resultados_finales),
+    "criterios_generales": {
+        "horrat_r": {"minimo": 0.3, "maximo": 1.3},
+        "repetibilidad_horwitz": "%RSD experimental <= 0.5 × PRSDR"
+    },
+    "estado_global": "CUMPLE" if cumple_global else "NO CUMPLE",
+    "conclusion_global": (
+        "Todos los niveles evaluados cumplen ambos criterios."
+        if cumple_global
+        else "Uno o más niveles no cumplen todos los criterios, o no se obtuvieron resultados. Revisar los resultados individuales antes de concluir."
+    ),
+    "niveles": resultados_finales
+}
+
+with open(ruta_json, "w", encoding="utf-8") as archivo_json:
+    json.dump(datos_json, archivo_json, ensure_ascii=False, indent=4, allow_nan=False)
+
+print("\nArchivo JSON generado:")
+print(ruta_json)
+
+
+# 11. FIN
 # ============================================================
 
 print("\n" + "#" * 110)
