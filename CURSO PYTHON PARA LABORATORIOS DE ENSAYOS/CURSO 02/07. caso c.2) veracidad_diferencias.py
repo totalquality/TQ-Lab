@@ -28,6 +28,8 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import json
+from pathlib import Path
 
 from scipy import stats
 
@@ -1168,4 +1170,49 @@ print(
 print("\n" + "#" * 110)
 print("ANÁLISIS C.2 TERMINADO")
 print("#" * 110)
+
+# ============================================================
+# 11. EXPORTACIÓN JSON (SIN FECHA NI HORA)
+# ============================================================
+
+def convertir_json(valor):
+    """Convierte valores NumPy y valores no finitos a tipos JSON válidos."""
+    if isinstance(valor, dict):
+        return {str(k): convertir_json(v) for k, v in valor.items()}
+    if isinstance(valor, (list, tuple)):
+        return [convertir_json(v) for v in valor]
+    if isinstance(valor, (np.integer,)):
+        return int(valor)
+    if isinstance(valor, (np.floating,)):
+        valor = float(valor)
+        return valor if np.isfinite(valor) else None
+    if isinstance(valor, (np.bool_,)):
+        return bool(valor)
+    if isinstance(valor, float) and not np.isfinite(valor):
+        return None
+    return valor
+
+
+resultado_json = {
+    "schema_version": "1.0",
+    "modulo": "Veracidad — Caso C.2",
+    "archivo_entrada": str(archivo),
+    "nivel_significancia": alpha,
+    "criterios": {
+        "normalidad": "p-valor AD >= alpha: diferencias consideradas normales; p-valor AD < alpha: no normales",
+        "seleccion_prueba": "t de Student pareada para diferencias normales; Wilcoxon de rangos con signo para diferencias no normales",
+        "decision_prueba": "p-valor >= alpha: no se rechaza H0; p-valor < alpha: se rechaza H0",
+        "hipotesis": "H0: diferencia = 0; H1: diferencia != 0",
+        "diferencia": "método candidato - método de referencia"
+    },
+    "numero_niveles": len(resultados_finales),
+    "resultados_por_nivel": resultados_finales
+}
+
+resultado_json = convertir_json(resultado_json)
+ruta_json = Path(archivo).with_name("resultados_veracidad_caso_C2.json")
+with ruta_json.open("w", encoding="utf-8") as f:
+    json.dump(resultado_json, f, ensure_ascii=False, indent=4, allow_nan=False)
+
+print(f"\nResultados JSON exportados a: {ruta_json}")
 
