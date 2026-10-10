@@ -1,4 +1,6 @@
 import pandas as pd
+import json
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
@@ -303,3 +305,62 @@ print("\nCRITERIO:")
 print(f"p < α ({alpha}) en el límite inferior → evidencia de que el valor está por encima del mínimo.")
 print(f"p < α ({alpha}) en el límite superior → evidencia de que el valor está por debajo del máximo.")
 print("Deben cumplirse ambos contrastes para concluir que el valor está dentro del intervalo.")
+
+# ============================================================
+# EXPORTACIÓN JSON PARA EL GENERADOR DEL INFORME WORD
+# No incluye fechas ni horas. No modifica los cálculos estadísticos.
+# ============================================================
+
+def convertir_json(obj):
+    """Convierte tipos NumPy/Pandas y valores no finitos a JSON válido."""
+    if isinstance(obj, dict):
+        return {str(k): convertir_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [convertir_json(v) for v in obj]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating, float)):
+        valor = float(obj)
+        return valor if np.isfinite(valor) else None
+    if isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    if pd.isna(obj):
+        return None
+    return obj
+
+
+resultados_json = []
+for r_original in resultados:
+    r_json = dict(r_original)
+    r_json["estado"] = (
+        "EVALUACIÓN INCOMPLETA"
+        if r_json.get("p_li") is None or r_json.get("p_ls") is None
+        or not np.isfinite(r_json.get("p_li", np.nan))
+        or not np.isfinite(r_json.get("p_ls", np.nan))
+        else ("CUMPLE" if r_json.get("dentro") == "SÍ" else "NO CUMPLE")
+    )
+    resultados_json.append(r_json)
+
+estados = [r["estado"] for r in resultados_json]
+if estados and all(e == "CUMPLE" for e in estados):
+    estado_global = "CUMPLE"
+elif any(e == "NO CUMPLE" for e in estados):
+    estado_global = "NO CUMPLE"
+else:
+    estado_global = "EVALUACIÓN INCOMPLETA"
+
+salida_json = Path(archivo).parent / "resultados_veracidad_intervalo.json"
+payload = {
+    "schema_version": "1.0",
+    "modulo": "Veracidad — Caso B: Intervalo de referencia",
+    "archivo_entrada": str(archivo),
+    "alpha": alpha,
+    "criterio": "Ambos contrastes deben cumplir p < alpha para concluir que los resultados están dentro del intervalo de referencia.",
+    "numero_niveles": len(resultados_json),
+    "estado_global": estado_global,
+    "resultados_por_nivel": resultados_json,
+}
+with open(salida_json, "w", encoding="utf-8") as f:
+    json.dump(convertir_json(payload), f, ensure_ascii=False, indent=2, allow_nan=False)
+
+print(f"\nResultados JSON exportados a: {salida_json}")
