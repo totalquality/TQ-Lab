@@ -1,4 +1,5 @@
 import pandas as pd
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
@@ -920,4 +921,51 @@ print(
     "\nLa prueba utilizada depende de la normalidad y, cuando "
     "corresponde, de la homogeneidad de varianzas."
 )
+
+# ============================================================
+# EXPORTACIÓN JSON PARA EL INFORME MAESTRO
+# No modifica los cálculos ni los criterios estadísticos.
+# No incluye fechas ni horas.
+# ============================================================
+
+def convertir_json(obj):
+    """Convierte tipos NumPy/Pandas y valores no finitos a JSON válido."""
+    if isinstance(obj, dict):
+        return {str(k): convertir_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [convertir_json(v) for v in obj]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating, float)):
+        valor = float(obj)
+        return valor if np.isfinite(valor) else None
+    if isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    if pd.isna(obj):
+        return None
+    return obj
+
+
+resultados_json = {
+    "schema_version": "1.0",
+    "modulo": "Veracidad — Caso C.1: comparación entre método candidato y método de referencia",
+    "archivo_entrada": str(archivo),
+    "nivel_significancia": alpha,
+    "criterio": "p >= alpha: no se evidencia diferencia estadísticamente significativa; p < alpha: se evidencia diferencia estadísticamente significativa.",
+    "numero_comparaciones": len(resultados_finales),
+    "estado_global": (
+        "CUMPLE" if resultados_finales and all(
+            r.get("Resultado") == "NO se evidencia diferencia significativa"
+            for r in resultados_finales
+        ) else "NO CUMPLE" if resultados_finales else "EVALUACIÓN INCOMPLETA"
+    ),
+    "resultados_por_nivel": resultados_finales,
+}
+
+ruta_json = Path(archivo).parent / "resultados_veracidad_caso_C1.json"
+with ruta_json.open("w", encoding="utf-8") as archivo_json:
+    json.dump(convertir_json(resultados_json), archivo_json, ensure_ascii=False, indent=4, allow_nan=False)
+
+print("\nArchivo JSON exportado correctamente:")
+print(ruta_json)
 
