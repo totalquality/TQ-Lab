@@ -39,6 +39,8 @@
 # ============================================================
 
 import os
+import json
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -47,6 +49,10 @@ from scipy import stats
 CARPETA = r"D:\Ciencia_de_Datos\Validación de métodos químicos"
 ARCHIVO_POR_DEFECTO = "Selectividad_Danzer_completo.xlsx"
 CRITERIO_KS = 0.30
+
+# Variables para exportar resultados a JSON (sin fecha ni hora).
+RESULTADO_JSON = None
+ARCHIVO_PROCESADO = None
 
 
 def normalizar(texto):
@@ -296,6 +302,40 @@ def ejecutar_completo(df_A, df_I, nombre_A, nombre_I):
     Ks = KI / KA
     cumple = Ks <= CRITERIO_KS
 
+    global RESULTADO_JSON
+    RESULTADO_JSON = {
+        "schema_version": "1.0",
+        "parametro": "Selectividad — método de Dänzer",
+        "procedimiento": "completo",
+        "criterio_Ks": CRITERIO_KS,
+        "hoja_analito": nombre_A,
+        "hoja_interferente": nombre_I,
+        "analito": {
+            "columnas_replicas": [str(c) for c in reps_A],
+            "numero_replicas_columnas": len(reps_A),
+            "numero_niveles": len(x_A),
+            "concentraciones": x_A.tolist(),
+            "respuestas_medias": y_A.tolist(),
+            "pendiente_KA": KA,
+            "intercepto": reg_A.intercept,
+            "r_cuadrado": reg_A.rvalue ** 2
+        },
+        "interferente": {
+            "columnas_replicas": [str(c) for c in reps_I],
+            "numero_replicas_columnas": len(reps_I),
+            "numero_niveles": len(x_I),
+            "concentraciones": x_I.tolist(),
+            "respuestas_medias": y_I.tolist(),
+            "pendiente_KI": KI,
+            "intercepto": reg_I.intercept,
+            "r_cuadrado": reg_I.rvalue ** 2
+        },
+        "Ks": Ks,
+        "criterio": f"Ks <= {CRITERIO_KS:.2f}",
+        "cumple": bool(cumple),
+        "estado": "CUMPLE" if cumple else "NO CUMPLE"
+    }
+
     print("\n" + "=" * 75)
     print("RESULTADOS – DÄNZER COMPLETO")
     print("=" * 75)
@@ -400,6 +440,38 @@ def ejecutar_simplificado(df_A, df_I, nombre_A, nombre_I):
     ) = calcular_simplificado(
         datos_A, datos_I
     )
+
+    global RESULTADO_JSON
+    RESULTADO_JSON = {
+        "schema_version": "1.0",
+        "parametro": "Selectividad — método de Dänzer",
+        "procedimiento": "simplificado",
+        "criterio_Ks": CRITERIO_KS,
+        "hoja_analito": nombre_A,
+        "hoja_interferente": nombre_I,
+        "analito": {
+            "columna_concentracion": str(col_CA),
+            "columna_respuesta": str(col_RA),
+            "concentracion": C_A,
+            "numero_replicas": int(len(y_A)),
+            "respuestas": y_A.tolist(),
+            "respuesta_media": media_A,
+            "KA": KA
+        },
+        "interferente": {
+            "columna_concentracion": str(col_CI),
+            "columna_respuesta": str(col_RI),
+            "concentracion": C_I,
+            "numero_replicas": int(len(y_I)),
+            "respuestas": y_I.tolist(),
+            "respuesta_media": media_I,
+            "KI": KI
+        },
+        "Ks": Ks,
+        "criterio": f"Ks <= {CRITERIO_KS:.2f}",
+        "cumple": bool(cumple),
+        "estado": "CUMPLE" if cumple else "NO CUMPLE"
+    }
 
     print("\n" + "=" * 75)
     print("RESULTADOS – DÄNZER SIMPLIFICADO")
@@ -512,6 +584,8 @@ def main():
         nombre += ".xlsx"
 
     archivo = os.path.join(CARPETA, nombre)
+    global ARCHIVO_PROCESADO
+    ARCHIVO_PROCESADO = archivo
 
     if not os.path.exists(archivo):
         raise FileNotFoundError(
@@ -554,5 +628,36 @@ def main():
     print("\nAnálisis finalizado.")
 
 
+def convertir_json(obj):
+    """Convierte tipos NumPy y valores no finitos a valores JSON válidos."""
+    if isinstance(obj, dict):
+        return {str(k): convertir_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [convertir_json(v) for v in obj]
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, (np.floating, float)):
+        valor = float(obj)
+        return valor if np.isfinite(valor) else None
+    if isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    if isinstance(obj, Path):
+        return str(obj)
+    return obj
+
+
 if __name__ == "__main__":
     main()
+    if RESULTADO_JSON is not None and ARCHIVO_PROCESADO is not None:
+        ruta_json = Path(ARCHIVO_PROCESADO).with_name(
+            "resultados_selectividad_danzer.json"
+        )
+        with open(ruta_json, "w", encoding="utf-8") as archivo_json:
+            json.dump(
+                convertir_json(RESULTADO_JSON),
+                archivo_json,
+                ensure_ascii=False,
+                indent=4,
+                allow_nan=False
+            )
+        print(f"\nResultados JSON exportados a:\n{ruta_json}")
