@@ -7,6 +7,7 @@
 # ============================================================
 
 import os
+import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -633,3 +634,81 @@ print(archivo_salida)
 
 print("\nProceso finalizado.")
 input("\nPresione ENTER para salir...")
+
+# ============================================================
+# EXPORTACIÓN JSON PARA INTEGRACIÓN DEL INFORME DE VALIDACIÓN
+# No se incluyen fechas ni horas.
+# ============================================================
+
+def convertir_json(obj):
+    """Convierte valores NumPy/Pandas a tipos compatibles con JSON."""
+    if isinstance(obj, dict):
+        return {str(k): convertir_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [convertir_json(v) for v in obj]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating, float)):
+        valor = float(obj)
+        return valor if np.isfinite(valor) else None
+    if isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    if pd.isna(obj):
+        return None
+    if isinstance(obj, (str, int)) or obj is None:
+        return obj
+    return str(obj)
+
+
+resultado_json = {
+    "schema_version": "1.0",
+    "parametro": "Selectividad — método comparativo con método de referencia",
+    "archivo_entrada": os.path.basename(ARCHIVO),
+    "hoja": str(NOMBRE_HOJA),
+    "columnas": {
+        "nivel": str(col_nivel) if col_nivel is not None else None,
+        "metodo_a": str(col_a),
+        "metodo_b": str(col_b)
+    },
+    "alpha": ALPHA,
+    "n": n,
+    "estadisticos_descriptivos": {
+        "media_metodo_a": media_a,
+        "media_metodo_b": media_b,
+        "media_diferencias_a_menos_b": media_diferencias,
+        "mediana_diferencias": mediana_diferencias,
+        "desviacion_estandar_diferencias": sd_diferencias
+    },
+    "normalidad_diferencias": {
+        "prueba": "Anderson-Darling",
+        "estadistico": AD,
+        "p_valor": p_AD,
+        "compatible_con_normalidad": normal
+    },
+    "prueba_comparativa": {
+        "nombre": nombre_prueba,
+        "estadistico": estadistico,
+        "grados_libertad": gl,
+        "p_valor": p_valor,
+        "decision": decision,
+        "conclusion": conclusion
+    },
+    "intervalo_confianza": {
+        "metodo": "IC bilateral t-Student para la media" if normal else "IC bootstrap percentil para la mediana",
+        "nivel_confianza": 1 - ALPHA,
+        "limite_inferior": li,
+        "limite_superior": ls,
+        "incluye_cero": incluye_cero
+    },
+    "criterio_interpretacion": "p-valor >= alpha: no se rechaza H0; p-valor < alpha: se rechaza H0",
+    "datos_comparativos": df.to_dict(orient="records"),
+    "tabla_resumen": resumen.to_dict(orient="records")
+}
+
+archivo_json = os.path.join(carpeta, "resultados_selectividad_comparativo.json")
+with open(archivo_json, "w", encoding="utf-8") as f:
+    json.dump(convertir_json(resultado_json), f, ensure_ascii=False, indent=2, allow_nan=False)
+
+print("\nResultados JSON guardados en:")
+print(archivo_json)
+
