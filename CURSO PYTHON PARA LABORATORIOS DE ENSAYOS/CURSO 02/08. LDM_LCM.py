@@ -42,6 +42,7 @@
 
 
 import warnings
+import json
 from pathlib import Path
 
 import numpy as np
@@ -1067,3 +1068,37 @@ print(
 
 print("#" * 110)
 
+# ============================================================
+# 16. EXPORTACIÓN DE RESULTADOS A JSON
+# ============================================================
+# Se exportan los resultados ya calculados, sin modificar cálculos,
+# fórmulas, criterios ni gráficos. No se incluyen fechas ni horas.
+
+resultados_json = {
+    "schema_version": "1.0",
+    "parametro": "Límite de detección y límite de cuantificación del método",
+    "archivo_entrada": str(archivo),
+    "hoja_utilizada": str(nombre_hoja),
+    "columna_resultados": str(nombre_columna_B),
+    "tipo_blanco": resultado["tipo_blanco"],
+    "n": int(resultado["n"]),
+    "media": float(resultado["media"]),
+    "desviacion_estandar": float(resultado["sd"]),
+    "grados_libertad": int(resultado["gl"]),
+    "alpha": float(resultado["alpha"]),
+    "t_critico": float(resultado["t_critico"]),
+    "formula_LDM": resultado["formula_LDM"],
+    "LDM": float(resultado["LDM"]),
+    "formula_LCM": resultado["formula_LCM"],
+    "LCM": {
+        str(k): float(v) for k, v in resultado["LCM"].items()
+    },
+    "valores_K": [int(k) for k in K_VALUES]
+}
+
+ruta_json = Path(archivo).parent / "resultados_LDM_LCM.json"
+with ruta_json.open("w", encoding="utf-8") as archivo_json:
+    json.dump(resultados_json, archivo_json, ensure_ascii=False, indent=4)
+
+print("\nResultados exportados a JSON:")
+print(ruta_json.resolve())
