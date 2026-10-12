@@ -44,6 +44,7 @@ están aliadas/confundidas.
 """
 
 from pathlib import Path
+import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -677,3 +678,103 @@ else:
 print("\n" + "=" * 90)
 print("Análisis terminado.")
 print("=" * 90)
+
+
+# ============================================================
+# EXPORTACIÓN JSON PARA EL GENERADOR DEL INFORME WORD
+# (Se agregan únicamente la serialización y la exportación;
+# no se modifican los cálculos ni los criterios anteriores.)
+# ============================================================
+
+def convertir_json(valor):
+    """Convierte valores NumPy/Pandas a tipos compatibles con JSON."""
+    if isinstance(valor, dict):
+        return {str(k): convertir_json(v) for k, v in valor.items()}
+    if isinstance(valor, (list, tuple)):
+        return [convertir_json(v) for v in valor]
+    if isinstance(valor, (np.integer,)):
+        return int(valor)
+    if isinstance(valor, (np.floating,)):
+        return float(valor) if np.isfinite(valor) else None
+    if isinstance(valor, (np.bool_,)):
+        return bool(valor)
+    if pd.isna(valor):
+        return None
+    if isinstance(valor, (str, int, float, bool)) or valor is None:
+        if isinstance(valor, float) and not np.isfinite(valor):
+            return None
+        return valor
+    return str(valor)
+
+
+# Preparar resultados por nivel, conservando los valores calculados.
+niveles_json = []
+for datos_nivel in datos_niveles:
+    nombre_nivel = datos_nivel["nivel"]
+    bloque = df_global[df_global["Nivel"] == nombre_nivel]
+    niveles_json.append({
+        "nivel": nombre_nivel,
+        "hoja": datos_nivel["hoja"],
+        "concentracion": datos_nivel["concentracion"],
+        "Sr_repetibilidad": datos_nivel["Sr"],
+        "factor_critico": FACTOR_CRITICO,
+        "efecto_critico": (
+            FACTOR_CRITICO * datos_nivel["Sr"]
+        ),
+        "factores": bloque[
+            [
+                "Factor", "Media (+)", "Media (-)", "Efecto",
+                "|Efecto|", "Efecto relativo (%)",
+                "|Efecto relativo| (%)", "Efecto crítico",
+                "Evaluación"
+            ]
+        ].to_dict(orient="records")
+    })
+
+factores_significativos_json = df_global[
+    ~df_global["Evaluación"].str.contains("NO SIGNIFICATIVO")
+]
+
+estado_general = (
+    "NO SE IDENTIFICARON EFECTOS QUE SUPEREN EL CRITERIO"
+    if factores_significativos_json.empty
+    else "SE IDENTIFICARON EFECTOS QUE SUPERAN EL CRITERIO"
+)
+
+datos_json = {
+    "schema_version": "1.0",
+    "estudio": "Robustez — Youden–Steiner / diseño factorial fraccionado",
+    "archivo_entrada": archivo.name,
+    "criterio": {
+        "factor_critico": FACTOR_CRITICO,
+        "formula_efecto_critico": "2.24 × Sr",
+        "regla": (
+            "|Efecto| > efecto crítico: efecto potencialmente significativo; "
+            "|Efecto| <= efecto crítico: efecto no significativo"
+        ),
+        "formula_efecto_absoluto": "(sum(Y+) - sum(Y-)) / n",
+        "formula_efecto_relativo_porcentaje": (
+            "[(sum(Y+) - sum(Y-)) / sum(Y+)] × 100"
+        ),
+        "alpha_configurado": ALPHA
+    },
+    "conclusion_general": estado_general,
+    "niveles_evaluados": len(niveles_json),
+    "niveles": niveles_json,
+    "factores_significativos": factores_significativos_json.to_dict(
+        orient="records"
+    ),
+    "resultados_globales": df_global.to_dict(orient="records")
+}
+
+ruta_json = archivo.with_name("resultados_robustez_youden_steiner.json")
+with ruta_json.open("w", encoding="utf-8") as archivo_json:
+    json.dump(
+        convertir_json(datos_json),
+        archivo_json,
+        ensure_ascii=False,
+        indent=4,
+        allow_nan=False
+    )
+
+print(f"\nResultados JSON exportados en:\n{ruta_json}")
