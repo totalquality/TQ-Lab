@@ -38,6 +38,7 @@ y columnas de réplicas.
 
 import os
 import re
+import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -478,6 +479,81 @@ try:
 
     print("\nTABLA RESUMEN")
     print(tabla.to_string(index=False))
+
+    # --------------------------------------------------------
+    # EXPORTACIÓN JSON (sin fechas ni horas)
+    # --------------------------------------------------------
+    def convertir_json(obj):
+        """Convierte tipos NumPy/Pandas y valores no finitos para JSON."""
+        if isinstance(obj, dict):
+            return {str(k): convertir_json(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [convertir_json(v) for v in obj]
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating, float)):
+            valor = float(obj)
+            return valor if np.isfinite(valor) else None
+        if isinstance(obj, (np.bool_, bool)):
+            return bool(obj)
+        if obj is None or isinstance(obj, (str, int)):
+            return obj
+        return str(obj)
+
+    resultados_json = {
+        "schema_version": "1.0",
+        "parametro": "Selectividad — comparación utilizando blancos de muestra",
+        "archivo_entrada": os.path.basename(ruta),
+        "hoja_utilizada": str(nombre_hoja),
+        "alpha": ALPHA,
+        "criterio": {
+            "indicador": "Error (%)",
+            "formula": "abs(concentracion_observada_corregida - concentracion_esperada) / concentracion_esperada * 100",
+            "regla": "Error experimental <= error máximo permitido",
+        },
+        "datos": {
+            "blanco_muestra": {
+                "replicas": blanco.tolist(),
+                "n": r_blanco["n"],
+                "media": media_blanco,
+                "desviacion_estandar": r_blanco["sd"],
+                "minimo": r_blanco["min"],
+                "maximo": r_blanco["max"],
+            },
+            "blanco_fortificado": {
+                "replicas": fortificado.tolist(),
+                "n": r_fort["n"],
+                "media": media_fort,
+                "desviacion_estandar": r_fort["sd"],
+                "minimo": r_fort["min"],
+                "maximo": r_fort["max"],
+            },
+        },
+        "resultados": {
+            "concentracion_esperada": c_esperada,
+            "concentracion_observada_corregida": c_observada,
+            "error_porcentual": error_pct,
+            "error_maximo_permitido_porcentual": limite_error,
+            "cumple": cumple,
+            "estado": "CUMPLE" if cumple else "NO CUMPLE",
+            "conclusion": (
+                "El método cumple el criterio de selectividad."
+                if cumple
+                else "El método no cumple el criterio de selectividad."
+            ),
+        },
+        "tabla_resumen": [
+            {"indicador": str(fila["Indicador"]), "valor": fila["Valor"]}
+            for _, fila in tabla.iterrows()
+        ],
+    }
+    ruta_json = os.path.join(
+        os.path.dirname(os.path.abspath(ruta)),
+        "resultados_selectividad_blancos.json",
+    )
+    with open(ruta_json, "w", encoding="utf-8") as archivo_json:
+        json.dump(convertir_json(resultados_json), archivo_json, ensure_ascii=False, indent=2, allow_nan=False)
+    print(f"\nResultados JSON exportados a:\n{ruta_json}")
 
     # --------------------------------------------------------
     # Gráfico
