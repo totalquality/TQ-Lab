@@ -1,4 +1,5 @@
 import pandas as pd
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -461,3 +462,47 @@ plt.show()
 
 print("\\nEstudio finalizado.")
 
+# ============================================================
+# EXPORTACIÓN DE RESULTADOS A JSON (SIN FECHA NI HORA)
+# ============================================================
+def convertir_json(valor):
+    """Convierte valores NumPy/Pandas a tipos compatibles con JSON."""
+    if isinstance(valor, dict):
+        return {str(k): convertir_json(v) for k, v in valor.items()}
+    if isinstance(valor, (list, tuple)):
+        return [convertir_json(v) for v in valor]
+    if isinstance(valor, (np.integer,)):
+        return int(valor)
+    if isinstance(valor, (np.floating,)):
+        return float(valor) if np.isfinite(valor) else None
+    if isinstance(valor, (np.bool_,)):
+        return bool(valor)
+    if isinstance(valor, float):
+        return valor if np.isfinite(valor) else None
+    if pd.isna(valor):
+        return None
+    return valor
+
+
+datos_json = {
+    "schema_version": "1.0",
+    "estudio": "Rango del método",
+    "archivo_entrada": archivo.name,
+    "numero_niveles": numero_niveles,
+    "criterio_global": {
+        "regla": "El rango evaluado cumple solo si todos los niveles cumplen veracidad y precisión.",
+        "conclusion": (
+            "CUMPLE" if general_ok
+            else "NO CUMPLE TODOS LOS CRITERIOS ESTABLECIDOS"
+        )
+    },
+    "resultados_por_nivel": convertir_json(resultados),
+    "datos_grafico": convertir_json(datos_grafico),
+    "resumen_final": convertir_json(res.to_dict(orient="records"))
+}
+
+ruta_json = archivo.parent / "resultados_rango_metodo.json"
+with open(ruta_json, "w", encoding="utf-8") as archivo_json:
+    json.dump(datos_json, archivo_json, ensure_ascii=False, indent=4, allow_nan=False)
+
+print(f"Resultados JSON guardados en: {ruta_json}")
