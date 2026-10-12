@@ -25,6 +25,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from pathlib import Path
+import json
 
 import numpy as np
 import pandas as pd
@@ -1563,5 +1564,164 @@ try:
 except Exception as e:
     print(
         "\nNo se pudo exportar el Excel de resultados."
+        f"\nDetalle: {e}"
+    )
+
+# ======================================================================
+# EXPORTACIÓN JSON PARA INTEGRACIÓN CON EL INFORME WORD
+# No modifica los cálculos, pruebas ni criterios del análisis.
+# No se incluyen fechas ni horas.
+# ======================================================================
+
+def _convertir_json_linealidad(obj):
+    """Convierte objetos NumPy/Pandas y valores no finitos a JSON válido."""
+    if isinstance(obj, dict):
+        return {str(k): _convertir_json_linealidad(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_convertir_json_linealidad(v) for v in obj]
+    if isinstance(obj, pd.DataFrame):
+        return _convertir_json_linealidad(obj.to_dict(orient="records"))
+    if isinstance(obj, pd.Series):
+        return _convertir_json_linealidad(obj.to_dict())
+    if isinstance(obj, np.ndarray):
+        return _convertir_json_linealidad(obj.tolist())
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating, float)):
+        valor = float(obj)
+        return valor if np.isfinite(valor) else None
+    if isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    if obj is None or isinstance(obj, (str, int)):
+        return obj
+    try:
+        if pd.isna(obj):
+            return None
+    except Exception:
+        pass
+    return str(obj)
+
+
+def _resumen_modelo_json(resultado_modelo):
+    if resultado_modelo is None:
+        return None
+    modelo = resultado_modelo["modelo"]
+    grado = resultado_modelo["grado"]
+    lof = resultado_modelo["lof"]
+    sup = resultado_modelo["supuestos"]
+    return {
+        "grado": int(grado),
+        "nombre": "OLS lineal" if grado == 1 else f"Regresión polinomial grado {grado}",
+        "ecuacion": ecuacion_modelo(modelo, grado),
+        "coeficientes": [
+            {
+                "parametro": f"beta_{i}",
+                "estimacion": modelo.params[i],
+                "error_estandar": modelo.bse[i],
+                "estadistico_t": modelo.tvalues[i],
+                "p_valor": modelo.pvalues[i],
+                "ic95_inferior": modelo.conf_int(alpha=ALPHA)[i, 0],
+                "ic95_superior": modelo.conf_int(alpha=ALPHA)[i, 1],
+            }
+            for i in range(len(modelo.params))
+        ],
+        "estadisticos_modelo": {
+            "n": len(x),
+            "R2": modelo.rsquared,
+            "R2_ajustado": modelo.rsquared_adj,
+            "R2_predicho": resultado_modelo["r2_predicho"],
+            "PRESS": resultado_modelo["press"],
+            "error_estandar_regresion_S": np.sqrt(modelo.mse_resid),
+            "F_modelo": modelo.fvalue,
+            "p_modelo": modelo.f_pvalue,
+        },
+        "lack_of_fit": lof,
+        "supuestos": {
+            "anderson_darling": sup["AD"],
+            "p_anderson_darling": sup["p_AD"],
+            "breusch_pagan_LM": sup["BP_LM"],
+            "p_breusch_pagan_LM": sup["BP_p_LM"],
+            "breusch_pagan_F": sup["BP_F"],
+            "p_breusch_pagan_F": sup["BP_p_F"],
+            "durbin_watson": sup["DW"],
+        },
+    }
+
+
+try:
+    resultado_json_linealidad = {
+        "schema_version": "1.0",
+        "parametro": "Linealidad y sensibilidad",
+        "archivo_entrada": str(ARCHIVO),
+        "hoja": str(hoja_real),
+        "columnas": {
+            "X": str(col_x),
+            "Y": str(col_y),
+        },
+        "alpha": ALPHA,
+        "n_observaciones": len(x),
+        "n_niveles_X": len(niveles_x),
+        "niveles_X": niveles_x,
+        "modelo_lineal_OLS": _resumen_modelo_json(res_ols),
+        "plan_B_activado": bool(activar_plan_b),
+        "modelo_polinomial_seleccionado": (
+            _resumen_modelo_json(resultado_polinomio)
+            if resultado_polinomio is not None else None
+        ),
+        "modelo_final": {
+            "nombre": nombre_modelo_final,
+            "grado": grado_final,
+            "ecuacion": ecuacion_modelo(modelo_final, grado_final),
+            "R2": modelo_final.rsquared,
+            "R2_ajustado": modelo_final.rsquared_adj,
+            "R2_predicho": (
+                res_ols["r2_predicho"] if grado_final == 1
+                else resultado_polinomio["r2_predicho"]
+            ),
+            "p_modelo": modelo_final.f_pvalue,
+            "lack_of_fit_p": p_lof_final,
+            "sensibilidad_en_X_medio": sensibilidad,
+            "formula_sensibilidad": (
+                f"S(X) = {modelo_final.params[1]:.10g}"
+                if grado_final == 1 else formula
+            ),
+        },
+        "criterios_OLS": tabla_criterios_ols.to_dict(orient="records"),
+        "evaluacion_final": tabla_final.to_dict(orient="records"),
+        "diagnosticos_finales": diag_final.to_dict(orient="records"),
+        "sensibilidad_por_X": {
+            "X": x_grid,
+            "dY_dX": sensibilidad_grid(modelo_final, grado_final, x_grid),
+        },
+        "criterios_y_referencias": {
+            "alpha": ALPHA,
+            "significancia_modelo_o_pendiente": "p < alpha",
+            "lack_of_fit": "p >= alpha",
+            "normalidad_residuales": "p_AD >= alpha",
+            "homocedasticidad": "p_Breusch-Pagan F >= alpha",
+            "independencia": "1.5 <= Durbin-Watson <= 2.5",
+            "plan_B": "Se activa cuando Lack-of-Fit lineal es evaluable y p < alpha",
+            "seleccion_polinomial": (
+                "Modelo significativo, término de mayor grado significativo "
+                "y Lack-of-Fit no significativo o no evaluable"
+            ),
+        },
+    }
+
+    ruta_json_linealidad = ARCHIVO.parent / "resultados_linealidad_sensibilidad.json"
+    with open(ruta_json_linealidad, "w", encoding="utf-8") as archivo_json:
+        json.dump(
+            _convertir_json_linealidad(resultado_json_linealidad),
+            archivo_json,
+            ensure_ascii=False,
+            indent=2,
+            allow_nan=False,
+        )
+
+    print(f"\nResultados JSON exportados a:\n{ruta_json_linealidad}")
+
+except Exception as e:
+    print(
+        "\nAdvertencia: no se pudo exportar el JSON de linealidad y sensibilidad."
         f"\nDetalle: {e}"
     )
