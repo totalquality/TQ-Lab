@@ -35,6 +35,7 @@
 # ============================================================
 
 import pandas as pd
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -495,3 +496,82 @@ plt.show()
 print("\n" + "=" * 80)
 print("ANÁLISIS FINALIZADO")
 print("=" * 80)
+
+
+# ------------------------------------------------------------
+# 14. EXPORTACIÓN JSON PARA EL INFORME DE VALIDACIÓN
+# ------------------------------------------------------------
+# Se exportan los resultados ya calculados, sin modificar fórmulas,
+# criterios, tablas ni gráficos. No se incluyen fechas ni horas.
+
+def convertir_json(valor):
+    """Convierte tipos NumPy/Pandas y valores no finitos a JSON válido."""
+    if isinstance(valor, dict):
+        return {str(k): convertir_json(v) for k, v in valor.items()}
+    if isinstance(valor, (list, tuple)):
+        return [convertir_json(v) for v in valor]
+    if isinstance(valor, (np.integer,)):
+        return int(valor)
+    if isinstance(valor, (np.floating, float)):
+        valor = float(valor)
+        return valor if np.isfinite(valor) else None
+    if isinstance(valor, (np.bool_, bool)):
+        return bool(valor)
+    if pd.isna(valor):
+        return None
+    return valor
+
+resultados_json = {
+    "schema_version": "1.0",
+    "parametro": "LDM_LCM_EURACHEM",
+    "archivo_entrada": archivo.name,
+    "hoja_utilizada": nombre_hoja,
+    "columna_identificacion": str(datos.columns[0]) if len(datos.columns) else None,
+    "columnas_replicas": [str(col) for col in columnas_replica],
+    "filas_incompletas_excluidas": int(filas_incompletas),
+    "estructura_experimental": {
+        "determinaciones_independientes_m": int(m),
+        "replicas_por_determinacion_n": int(n),
+        "grados_libertad": int(gl),
+        "numero_blancos_promediados_nB": int(nB)
+    },
+    "resultados": {
+        "promedio_blanco": float(promedio_blanco),
+        "s0": float(s0),
+        "s0_ajustado": float(s0_ajustado),
+        "valor_critico_CV": float(CV),
+        "LOD": float(LOD),
+        "LCM": {
+            "K_5": float(LCM_5),
+            "K_6": float(LCM_6),
+            "K_10": float(LCM_10)
+        },
+        "orden_correcto": bool(orden_correcto)
+    },
+    "formulas": {
+        "s0": "Desviación estándar de los promedios de las determinaciones independientes",
+        "s0_ajustado": "s0 * sqrt(1/n + 1/nB)",
+        "CV": "1.645 * s0_ajustado",
+        "LOD": "3 * s0_ajustado",
+        "LCM_K5": "5 * s0_ajustado",
+        "LCM_K6": "6 * s0_ajustado",
+        "LCM_K10": "10 * s0_ajustado"
+    },
+    "criterios": {
+        "orden_esperado": "CV < LOD < LCM_K5 < LCM_K6 < LCM_K10",
+        "orden_correcto": bool(orden_correcto)
+    }
+}
+
+ruta_json = archivo.parent / "resultados_LDM_LCM_EURACHEM.json"
+with open(ruta_json, "w", encoding="utf-8") as archivo_json:
+    json.dump(
+        convertir_json(resultados_json),
+        archivo_json,
+        ensure_ascii=False,
+        indent=4,
+        allow_nan=False
+    )
+
+print("\nArchivo JSON generado:")
+print(ruta_json.resolve())
