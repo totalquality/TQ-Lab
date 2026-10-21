@@ -421,7 +421,8 @@ def grafica_c2(
         rect=[0, 0.04, 1, 0.94]
     )
 
-    plt.show()
+    # La figura queda abierta para mostrarla y/o guardarla al finalizar
+    # el procesamiento de todos los niveles.
 
 
 # ============================================================
@@ -1216,3 +1217,53 @@ with ruta_json.open("w", encoding="utf-8") as f:
 
 print(f"\nResultados JSON exportados a: {ruta_json}")
 
+# ============================================================
+# 12. GUARDADO OPCIONAL DE GRÁFICAS
+# No modifica cálculos, pruebas ni criterios estadísticos.
+# ============================================================
+
+if plt.get_fignums():
+    while True:
+        guardar_graficas = input(
+            "\n¿Desea guardar las gráficas generadas? [S/N]: "
+        ).strip().lower()
+        if guardar_graficas in ("s", "si", "sí", "n", "no"):
+            break
+        print("Respuesta no válida. Escriba S o N.")
+
+    if guardar_graficas in ("s", "si", "sí"):
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            raiz = tk.Tk()
+            raiz.withdraw()
+            raiz.attributes("-topmost", True)
+            carpeta_salida = filedialog.askdirectory(
+                title="Seleccione la carpeta para guardar las gráficas"
+            )
+            raiz.destroy()
+
+            if carpeta_salida:
+                carpeta_salida = Path(carpeta_salida)
+                for numero_figura, numero in enumerate(plt.get_fignums(), start=1):
+                    figura = plt.figure(numero)
+                    ruta_imagen = carpeta_salida / (
+                        f"Veracidad_C2_grafica_{numero_figura:02d}.png"
+                    )
+                    figura.savefig(
+                        ruta_imagen,
+                        dpi=300,
+                        bbox_inches="tight",
+                        format="png"
+                    )
+                    print(f"Gráfica guardada: {ruta_imagen}")
+            else:
+                print("No se seleccionó una carpeta. No se guardaron las gráficas.")
+        except Exception as error:
+            print(f"No fue posible guardar las gráficas: {error}")
+
+    # Mostrar las figuras al final, conservando el diseño original.
+    plt.show()
+else:
+    print("No hay gráficas abiertas para guardar o mostrar.")
