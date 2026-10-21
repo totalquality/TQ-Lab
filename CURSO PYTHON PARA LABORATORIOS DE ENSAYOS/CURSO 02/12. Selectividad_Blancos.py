@@ -268,7 +268,63 @@ def graficar_resultados(error_pct, limite_error):
     ax.legend(loc="upper left")
 
     plt.tight_layout()
-    plt.show()
+    # La gráfica se muestra al final, después del guardado opcional.
+
+
+# ============================================================
+# GUARDADO OPCIONAL DE GRÁFICAS COMO IMÁGENES PNG
+# ============================================================
+
+def guardar_graficas_opcional():
+    """Guarda las figuras abiertas como PNG a 300 dpi, si el usuario lo solicita."""
+    respuesta = input(
+        "\n¿Desea guardar la gráfica como imagen PNG a 300 dpi? [S/N]: "
+    ).strip().lower()
+
+    if respuesta not in ("s", "si", "sí", "y", "yes"):
+        return
+
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        raiz = tk.Tk()
+        raiz.withdraw()
+        raiz.attributes("-topmost", True)
+        carpeta_destino = filedialog.askdirectory(
+            title="Seleccione la carpeta para guardar la gráfica"
+        )
+        raiz.destroy()
+    except Exception as exc:
+        print(f"No se pudo abrir el selector de carpetas: {exc}")
+        return
+
+    if not carpeta_destino:
+        print("No se seleccionó una carpeta. No se guardó la gráfica.")
+        return
+
+    archivo_base = Path(ruta).stem if "ruta" in globals() else "Selectividad_Blancos"
+    archivo_base = re.sub(r'[<>:"/\\\\|?*]+', "_", archivo_base).strip(" ._")
+    if not archivo_base:
+        archivo_base = "Selectividad_Blancos"
+
+    figuras = [plt.figure(n) for n in plt.get_fignums()]
+    if not figuras:
+        print("No hay gráficas disponibles para guardar.")
+        return
+
+    guardadas = 0
+    for indice, figura in enumerate(figuras, start=1):
+        nombre_png = f"{archivo_base}_Selectividad_Blancos_Grafica_{indice:02d}.png"
+        destino = Path(carpeta_destino) / nombre_png
+        try:
+            figura.savefig(destino, dpi=300, bbox_inches="tight", format="png")
+            print(f"Gráfica guardada: {destino}")
+            guardadas += 1
+        except Exception as exc:
+            print(f"No se pudo guardar la gráfica: {exc}")
+
+    print(f"\nSe guardaron {guardadas} de {len(figuras)} gráfica(s).")
 
 
 # ============================================================
@@ -562,6 +618,8 @@ try:
         error_pct,
         limite_error
     )
+    guardar_graficas_opcional()
+    plt.show()
 
 except Exception as e:
     print("\n" + "=" * 72)
