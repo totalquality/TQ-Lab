@@ -36,6 +36,7 @@
 
 import pandas as pd
 import json
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -487,7 +488,6 @@ ax.legend(
 )
 
 plt.tight_layout()
-plt.show()
 
 # ------------------------------------------------------------
 # FIN
@@ -575,3 +575,72 @@ with open(ruta_json, "w", encoding="utf-8") as archivo_json:
 
 print("\nArchivo JSON generado:")
 print(ruta_json.resolve())
+
+
+
+# ------------------------------------------------------------
+# 15. GUARDADO OPCIONAL DE LA GRÁFICA COMO IMAGEN PNG
+# No modifica cálculos, fórmulas, criterios ni el diseño gráfico.
+# ------------------------------------------------------------
+
+if plt.get_fignums():
+    while True:
+        guardar_grafica = input(
+            "\n¿Desea guardar la gráfica como imagen PNG? [S/N]: "
+        ).strip().lower()
+
+        if guardar_grafica in ("s", "si", "sí", "n", "no"):
+            break
+
+        print("Respuesta no válida. Escriba S o N.")
+
+    if guardar_grafica in ("s", "si", "sí"):
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            raiz = tk.Tk()
+            raiz.withdraw()
+            raiz.attributes("-topmost", True)
+
+            carpeta_salida = filedialog.askdirectory(
+                title="Seleccione la carpeta para guardar la gráfica PNG"
+            )
+
+            raiz.destroy()
+
+            if carpeta_salida:
+                carpeta_salida = Path(carpeta_salida)
+
+                nombre_hoja_seguro = re.sub(
+                    r'[<>:"/\\\\|?*]', "_", str(nombre_hoja)
+                ).strip(" .")
+
+                ruta_imagen = carpeta_salida / (
+                    f"LDM_LCM_EURACHEM_{nombre_hoja_seguro}_grafica_01.png"
+                )
+
+                figura = plt.figure(plt.get_fignums()[0])
+                figura.savefig(
+                    ruta_imagen,
+                    dpi=300,
+                    bbox_inches="tight",
+                    format="png"
+                )
+
+                print(f"\nGráfica guardada: {ruta_imagen.resolve()}")
+
+            else:
+                print(
+                    "No se seleccionó una carpeta. "
+                    "No se guardó la gráfica."
+                )
+
+        except Exception as error:
+            print(f"No fue posible guardar la gráfica: {error}")
+
+    # Mostrar la única gráfica al final.
+    plt.show()
+
+else:
+    print("No hay gráficas abiertas para guardar o mostrar.")
