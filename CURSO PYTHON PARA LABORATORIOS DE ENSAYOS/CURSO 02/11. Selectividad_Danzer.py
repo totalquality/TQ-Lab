@@ -39,6 +39,7 @@
 # ============================================================
 
 import os
+import re
 import json
 from pathlib import Path
 import numpy as np
@@ -421,7 +422,7 @@ def ejecutar_completo(df_A, df_I, nombre_A, nombre_I):
     ax.legend()
 
     plt.tight_layout()
-    plt.show()
+    # La visualización se realiza al final, después del guardado opcional.
 
 
 def ejecutar_simplificado(df_A, df_I, nombre_A, nombre_I):
@@ -554,7 +555,79 @@ def ejecutar_simplificado(df_A, df_I, nombre_A, nombre_I):
     )
 
     plt.tight_layout()
-    plt.show()
+    # La visualización se realiza al final, después del guardado opcional.
+
+
+
+# ============================================================
+# GUARDADO OPCIONAL DE GRÁFICAS COMO IMÁGENES PNG
+# ============================================================
+def guardar_graficas_opcional():
+    """
+    Pregunta si se desea guardar las gráficas generadas.
+    Si la respuesta es afirmativa, permite seleccionar una carpeta
+    y guarda todas las figuras abiertas en PNG a 300 dpi.
+    """
+    respuesta = input(
+        "\n¿Desea guardar las gráficas como imágenes PNG a 300 dpi? [S/N]: "
+    ).strip().lower()
+
+    if respuesta not in ("s", "si", "sí", "y", "yes"):
+        return
+
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        raiz = tk.Tk()
+        raiz.withdraw()
+        raiz.attributes("-topmost", True)
+        carpeta_destino = filedialog.askdirectory(
+            title="Seleccione la carpeta para guardar las gráficas"
+        )
+        raiz.destroy()
+    except Exception as exc:
+        print(f"No se pudo abrir el selector de carpetas: {exc}")
+        return
+
+    if not carpeta_destino:
+        print("No se seleccionó una carpeta. No se guardaron las gráficas.")
+        return
+
+    # El nombre del archivo procesado se usa como identificador.
+    try:
+        base_archivo = Path(ARCHIVO_PROCESADO).stem if ARCHIVO_PROCESADO else "Selectividad_Danzer"
+    except Exception:
+        base_archivo = "Selectividad_Danzer"
+
+    base_archivo = re.sub(r'[<>:"/\\\\|?*]+', "_", base_archivo).strip(" ._")
+    if not base_archivo:
+        base_archivo = "Selectividad_Danzer"
+
+    nombres_graficas = {
+        1: "Curvas_analito_interferente",
+        2: "Respuestas_analito_interferente",
+    }
+
+    figuras = [plt.figure(n) for n in plt.get_fignums()]
+    if not figuras:
+        print("No hay gráficas disponibles para guardar.")
+        return
+
+    guardadas = 0
+    for indice, figura in enumerate(figuras, start=1):
+        etiqueta = nombres_graficas.get(indice, f"Grafica_{indice:02d}")
+        nombre_png = f"{base_archivo}_{etiqueta}.png"
+        ruta_png = Path(carpeta_destino) / nombre_png
+        try:
+            figura.savefig(ruta_png, dpi=300, bbox_inches="tight", format="png")
+            print(f"Gráfica guardada: {ruta_png}")
+            guardadas += 1
+        except Exception as exc:
+            print(f"No se pudo guardar la gráfica {indice}: {exc}")
+
+    print(f"\nSe guardaron {guardadas} de {len(figuras)} gráfica(s).")
+
 
 
 def main():
@@ -625,6 +698,8 @@ def main():
             hoja_A, hoja_I
         )
 
+    guardar_graficas_opcional()
+    plt.show()
     print("\nAnálisis finalizado.")
 
 
