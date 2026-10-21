@@ -21,6 +21,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import re
 
 from scipy import stats
 
@@ -332,7 +333,6 @@ def grafica_t_student(
         rect=[0, 0.05, 1, 0.94]
     )
 
-    plt.show()
 
 
 # ============================================================
@@ -478,7 +478,6 @@ def grafica_wilcoxon(
         rect=[0, 0.05, 1, 0.94]
     )
 
-    plt.show()
 
 
 # ============================================================
@@ -1111,3 +1110,52 @@ with open(salida_json, "w", encoding="utf-8") as archivo_json:
     )
 
 print(f"\nJSON exportado correctamente: {salida_json}")
+
+# ============================================================
+# 12. GUARDAR GRÁFICAS PARA EL INFORME (OPCIONAL)
+#     No modifica cálculos, pruebas ni el diseño de las figuras.
+# ============================================================
+
+figuras = [plt.figure(n) for n in plt.get_fignums()]
+
+if figuras:
+    guardar = input(
+        "\n¿Desea guardar las gráficas generadas para el informe? (s/n): "
+    ).strip().lower()
+
+    if guardar in ("s", "si", "sí", "y", "yes"):
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            raiz = tk.Tk()
+            raiz.withdraw()
+            carpeta = filedialog.askdirectory(
+                title="Seleccione la carpeta para guardar las gráficas"
+            )
+            raiz.destroy()
+
+            if carpeta:
+                carpeta_salida = Path(carpeta)
+                for indice, figura in enumerate(figuras, start=1):
+                    titulo = figura._suptitle.get_text() if figura._suptitle else "Veracidad_MRC"
+                    nombre_seguro = re.sub(r"[^A-Za-z0-9_-]+", "_", titulo).strip("_")
+                    nombre_archivo = f"{indice:02d}_{nombre_seguro or 'Veracidad_MRC'}.png"
+                    figura.savefig(
+                        carpeta_salida / nombre_archivo,
+                        dpi=300,
+                        bbox_inches="tight"
+                    )
+                print(f"\nSe guardaron {len(figuras)} gráfica(s) en: {carpeta_salida}")
+            else:
+                print("No se seleccionó una carpeta. Las gráficas no se guardaron.")
+        except Exception as error:
+            print(f"No fue posible guardar las gráficas: {error}")
+    else:
+        print("Las gráficas no se guardaron.")
+
+    # Mostrar las figuras al final, tanto si se guardaron como si no.
+    plt.show()
+else:
+    print("No se generaron gráficas para guardar.")
+
