@@ -26,6 +26,7 @@ warnings.filterwarnings("ignore")
 
 from pathlib import Path
 import json
+import re
 
 import numpy as np
 import pandas as pd
@@ -1052,7 +1053,7 @@ fig.suptitle(
     fontsize=20, fontweight="bold"
 )
 
-plt.show()
+# Visualización diferida hasta el final para permitir el guardado opcional.
 
 
 # ======================================================================
@@ -1188,7 +1189,7 @@ fig.suptitle(
     fontweight="bold"
 )
 fig.tight_layout(rect=[0, 0, 1, 0.95])
-plt.show()
+# Visualización diferida hasta el final para permitir el guardado opcional.
 
 
 # ======================================================================
@@ -1236,7 +1237,7 @@ ax.spines["top"].set_visible(False)
 ax.spines["right"].set_visible(False)
 ax.legend()
 plt.tight_layout()
-plt.show()
+# Visualización diferida hasta el final para permitir el guardado opcional.
 
 
 # ======================================================================
@@ -1293,7 +1294,7 @@ fig.suptitle(
     fontweight="bold"
 )
 fig.tight_layout(rect=[0, 0, 1, 0.94])
-plt.show()
+# Visualización diferida hasta el final para permitir el guardado opcional.
 
 
 
@@ -1725,3 +1726,90 @@ except Exception as e:
         "\nAdvertencia: no se pudo exportar el JSON de linealidad y sensibilidad."
         f"\nDetalle: {e}"
     )
+
+
+
+# ======================================================================
+# 26. GUARDADO OPCIONAL DE GRÁFICAS COMO IMÁGENES PNG
+# No modifica cálculos, pruebas, criterios ni el diseño de las gráficas.
+# ======================================================================
+
+figuras_abiertas = plt.get_fignums()
+
+if figuras_abiertas:
+    while True:
+        guardar_graficas = input(
+            "\n¿Desea guardar las gráficas generadas como imágenes PNG? [S/N]: "
+        ).strip().lower()
+
+        if guardar_graficas in ("s", "si", "sí", "n", "no"):
+            break
+
+        print("Respuesta no válida. Escriba S o N.")
+
+    if guardar_graficas in ("s", "si", "sí"):
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            raiz = tk.Tk()
+            raiz.withdraw()
+            raiz.attributes("-topmost", True)
+
+            carpeta_salida = filedialog.askdirectory(
+                title="Seleccione la carpeta para guardar las gráficas PNG"
+            )
+
+            raiz.destroy()
+
+            if carpeta_salida:
+                carpeta_salida = Path(carpeta_salida)
+
+                nombre_hoja_seguro = re.sub(
+                    r'[<>:"/\\\\|?*]', "_", str(hoja_real)
+                ).strip(" .")
+                nombre_archivo_seguro = re.sub(
+                    r'[<>:"/\\\\|?*]', "_", ARCHIVO.stem
+                ).strip(" .")
+
+                nombres_graficas = {
+                    1: "Curva_calibracion",
+                    2: "Diagnostico_supuestos",
+                    3: "Histograma_residuales",
+                    4: "Observaciones_influyentes",
+                }
+
+                for numero_figura in figuras_abiertas:
+                    figura = plt.figure(numero_figura)
+                    etiqueta = nombres_graficas.get(
+                        numero_figura, f"Grafica_{numero_figura:02d}"
+                    )
+
+                    ruta_imagen = carpeta_salida / (
+                        f"{nombre_archivo_seguro}_{nombre_hoja_seguro}_"
+                        f"{etiqueta}.png"
+                    )
+
+                    figura.savefig(
+                        ruta_imagen,
+                        dpi=300,
+                        bbox_inches="tight",
+                        format="png"
+                    )
+
+                    print(f"Gráfica guardada: {ruta_imagen.resolve()}")
+
+            else:
+                print(
+                    "No se seleccionó una carpeta. "
+                    "No se guardaron las imágenes PNG."
+                )
+
+        except Exception as error:
+            print(f"No fue posible guardar las imágenes: {error}")
+
+    # Mostrar todas las figuras al final, se hayan guardado o no.
+    plt.show()
+
+else:
+    print("No hay gráficas abiertas para guardar o mostrar.")
