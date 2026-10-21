@@ -43,6 +43,7 @@
 
 import warnings
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -274,8 +275,6 @@ def grafica_LDM_LCM(
     aparecen progresivamente, como una presentación tipo video.
     """
 
-    from matplotlib.animation import FuncAnimation, PillowWriter
-
     LDM = resultado["LDM"]
     LCM5 = resultado["LCM"][5]
     LCM6 = resultado["LCM"][6]
@@ -399,16 +398,16 @@ def grafica_LDM_LCM(
 
     plt.tight_layout()
 
-    plt.show()
+    # La figura estática se conserva abierta para mostrarla y/o exportarla al final.
 
 
     # ========================================================
     # ANIMACIÓN TIPO VIDEO
     # ========================================================
-
-    fig_anim, ax_anim = plt.subplots(
-        figsize=(14, 8)
-    )
+    # Se omite la segunda gráfica/figura animada porque representa
+    # los mismos límites que la gráfica estática. Se conserva solo
+    # la primera gráfica, que es la que se mostrará y podrá guardarse.
+    return
 
     ax_anim.set_facecolor("#F7F9FC")
 
@@ -604,7 +603,7 @@ def grafica_LDM_LCM(
             f"Detalle: {error}"
         )
 
-    plt.show()
+    # La animación también se conserva abierta para mostrarla y/o exportarla al final.
 
 
 # ============================================================
@@ -1102,3 +1101,77 @@ with ruta_json.open("w", encoding="utf-8") as archivo_json:
 
 print("\nResultados exportados a JSON:")
 print(ruta_json.resolve())
+
+
+# ============================================================
+# 17. GUARDADO OPCIONAL DE GRÁFICAS COMO IMÁGENES PNG
+# No modifica cálculos, fórmulas, criterios estadísticos ni diseños.
+# ============================================================
+
+if plt.get_fignums():
+    while True:
+        guardar_graficas = input(
+            "\n¿Desea guardar las gráficas como imágenes PNG? [S/N]: "
+        ).strip().lower()
+
+        if guardar_graficas in ("s", "si", "sí", "n", "no"):
+            break
+
+        print("Respuesta no válida. Escriba S o N.")
+
+    if guardar_graficas in ("s", "si", "sí"):
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            raiz = tk.Tk()
+            raiz.withdraw()
+            raiz.attributes("-topmost", True)
+
+            carpeta_salida = filedialog.askdirectory(
+                title="Seleccione la carpeta para guardar las gráficas PNG"
+            )
+
+            raiz.destroy()
+
+            if carpeta_salida:
+                carpeta_salida = Path(carpeta_salida)
+
+                for numero_figura, numero in enumerate(
+                    plt.get_fignums(), start=1
+                ):
+                    figura = plt.figure(numero)
+
+                    # Nombre automático según el parámetro y la hoja analizada.
+                    # Se sustituyen caracteres no válidos para nombres de archivo.
+                    nombre_hoja_seguro = re.sub(
+                        r'[<>:"/\\\\|?*]', "_", str(nombre_hoja)
+                    ).strip(" .")
+
+                    ruta_imagen = carpeta_salida / (
+                        f"LDM_LCM_{nombre_hoja_seguro}_grafica_{numero_figura:02d}.png"
+                    )
+
+                    figura.savefig(
+                        ruta_imagen,
+                        dpi=300,
+                        bbox_inches="tight",
+                        format="png"
+                    )
+
+                    print(f"Imagen guardada: {ruta_imagen.resolve()}")
+
+            else:
+                print(
+                    "No se seleccionó una carpeta. "
+                    "No se guardaron las imágenes PNG."
+                )
+
+        except Exception as error:
+            print(f"No fue posible guardar las imágenes: {error}")
+
+    # Mostrar las figuras al final, conservando el diseño original.
+    plt.show()
+
+else:
+    print("No hay gráficas abiertas para guardar o mostrar.")
