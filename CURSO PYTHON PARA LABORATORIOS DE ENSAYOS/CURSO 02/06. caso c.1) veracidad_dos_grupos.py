@@ -611,7 +611,7 @@ def grafica_comparacion(nombre_hoja, candidato, referencia,
     )
 
     plt.tight_layout(rect=[0, 0.04, 1, 0.94])
-    plt.show()
+    # La figura se conserva abierta para mostrarla y/o guardarla al finalizar.
 
 
 # ============================================================
@@ -968,4 +968,47 @@ with ruta_json.open("w", encoding="utf-8") as archivo_json:
 
 print("\nArchivo JSON exportado correctamente:")
 print(ruta_json)
+
+# ============================================================
+# GUARDADO OPCIONAL DE GRÁFICAS PARA EL INFORME WORD
+# No modifica cálculos, pruebas ni criterios estadísticos.
+# ============================================================
+
+figuras = [plt.figure(n) for n in plt.get_fignums()]
+if figuras:
+    while True:
+        guardar = input("\n¿Desea guardar las gráficas generadas? [S/N]: ").strip().lower()
+        if guardar in ("s", "si", "sí", "n", "no"):
+            break
+        print("Respuesta no válida. Escriba S o N.")
+
+    if guardar in ("s", "si", "sí"):
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            raiz = tk.Tk()
+            raiz.withdraw()
+            raiz.attributes("-topmost", True)
+            carpeta_salida = filedialog.askdirectory(
+                title="Seleccione la carpeta para guardar las gráficas"
+            )
+            raiz.destroy()
+
+            if carpeta_salida:
+                carpeta_salida = Path(carpeta_salida)
+                for i, figura in enumerate(figuras, start=1):
+                    nombre = f"Veracidad_Caso_C1_grafica_{i:02d}.png"
+                    figura.savefig(carpeta_salida / nombre, dpi=300, bbox_inches="tight")
+                    print(f"Gráfica guardada: {carpeta_salida / nombre}")
+                print("Guardado de gráficas finalizado.")
+            else:
+                print("No se seleccionó carpeta. No se guardaron las gráficas.")
+        except Exception as exc:
+            print(f"No fue posible guardar las gráficas: {exc}")
+
+    # Mostrar las figuras al final del procesamiento.
+    plt.show()
+else:
+    print("No se generaron gráficas para guardar.")
 
