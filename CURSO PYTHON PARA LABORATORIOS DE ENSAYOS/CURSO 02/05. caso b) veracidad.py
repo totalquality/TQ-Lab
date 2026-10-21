@@ -220,7 +220,6 @@ def grafica(nivel, x, li, ls, r, prueba):
     fig.text(0.5, 0.015, "Se requiere p < α en ambos límites para demostrar estadísticamente la ubicación dentro del intervalo.",
              ha="center", fontsize=10, style="italic")
     plt.tight_layout(rect=[0, 0.05, 1, 0.94])
-    plt.show()
 
 
 # ============================================================
@@ -364,3 +363,64 @@ with open(salida_json, "w", encoding="utf-8") as f:
     json.dump(convertir_json(payload), f, ensure_ascii=False, indent=2, allow_nan=False)
 
 print(f"\nResultados JSON exportados a: {salida_json}")
+
+# ============================================================
+# GUARDADO OPCIONAL DE GRÁFICAS PARA EL INFORME WORD
+# No modifica los cálculos ni el diseño de las figuras.
+# ============================================================
+
+def preguntar_guardado_graficas():
+    figuras = [plt.figure(n) for n in plt.get_fignums()]
+    if not figuras:
+        return
+
+    while True:
+        respuesta = input(
+            "\n¿Desea guardar las gráficas generadas en PNG (300 dpi)? [s/n]: "
+        ).strip().lower()
+        if respuesta in ("s", "si", "sí", "n", "no"):
+            break
+        print("Respuesta no válida. Escriba 's' o 'n'.")
+
+    if respuesta in ("s", "si", "sí"):
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            raiz = tk.Tk()
+            raiz.withdraw()
+            raiz.attributes("-topmost", True)
+            carpeta = filedialog.askdirectory(
+                title="Seleccione la carpeta para guardar las gráficas"
+            )
+            raiz.destroy()
+        except Exception as exc:
+            print(f"No se pudo abrir el selector de carpetas: {exc}")
+            carpeta = input(
+                "Escriba la ruta completa de la carpeta de destino: "
+            ).strip().strip('"')
+
+        if carpeta:
+            destino = Path(carpeta)
+            destino.mkdir(parents=True, exist_ok=True)
+            guardadas = 0
+            for indice, figura in enumerate(figuras, start=1):
+                titulo = figura._suptitle.get_text() if figura._suptitle else "Veracidad intervalo"
+                nombre_seguro = "".join(
+                    caracter if caracter.isalnum() or caracter in "-_ " else "_"
+                    for caracter in titulo
+                ).strip().replace(" ", "_")
+                nombre = f"Veracidad_Intervalo_{indice:02d}_{nombre_seguro or 'grafica'}.png"
+                figura.savefig(destino / nombre, dpi=300, bbox_inches="tight")
+                guardadas += 1
+            print(f"Se guardaron {guardadas} gráfica(s) en: {destino}")
+        else:
+            print("No se seleccionó carpeta. No se guardaron las gráficas.")
+    else:
+        print("Las gráficas no se guardaron.")
+
+    # Mostrar las figuras al terminar el análisis y la opción de guardado.
+    plt.show()
+
+
+preguntar_guardado_graficas()
