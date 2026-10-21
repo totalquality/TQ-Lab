@@ -7,6 +7,7 @@
 # ============================================================
 
 import os
+import re
 import json
 import numpy as np
 import pandas as pd
@@ -26,6 +27,77 @@ NOMBRE_HOJA = 0
 
 # Semilla para que el IC bootstrap de Wilcoxon sea reproducible
 RANDOM_STATE = 12345
+
+
+
+
+# ============================================================
+# GUARDADO OPCIONAL DE GRÁFICAS COMO IMÁGENES PNG
+# ============================================================
+
+def guardar_graficas_opcional():
+    """Permite guardar todas las figuras generadas como PNG a 300 dpi."""
+    respuesta = input(
+        "\n¿Desea guardar las gráficas como imágenes PNG a 300 dpi? [S/N]: "
+    ).strip().lower()
+
+    if respuesta not in ("s", "si", "sí", "y", "yes"):
+        return
+
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        raiz = tk.Tk()
+        raiz.withdraw()
+        raiz.attributes("-topmost", True)
+        carpeta_destino = filedialog.askdirectory(
+            title="Seleccione la carpeta para guardar las gráficas"
+        )
+        raiz.destroy()
+    except Exception as exc:
+        print(f"No se pudo abrir el selector de carpetas: {exc}")
+        return
+
+    if not carpeta_destino:
+        print("No se seleccionó una carpeta. No se guardaron las gráficas.")
+        return
+
+    base_archivo = Path(ARCHIVO).stem
+    base_archivo = re.sub(r'[<>:"/\\\\|?*]+', "_", base_archivo).strip(" ._")
+    if not base_archivo:
+        base_archivo = "Selectividad_Comparativo"
+
+    etiquetas = {
+        1: "IC_diferencias_t_Student",
+        2: "IC_diferencias_Wilcoxon",
+        3: "Comparacion_y_diferencias",
+    }
+
+    figuras = [plt.figure(n) for n in plt.get_fignums()]
+    if not figuras:
+        print("No hay gráficas disponibles para guardar.")
+        return
+
+    guardadas = 0
+    for indice, figura in enumerate(figuras, start=1):
+        etiqueta = etiquetas.get(indice, f"Grafica_{indice:02d}")
+        destino = Path(carpeta_destino) / (
+            f"{base_archivo}_{etiqueta}.png"
+        )
+        try:
+            figura.savefig(
+                destino,
+                dpi=300,
+                bbox_inches="tight",
+                format="png",
+            )
+            print(f"Gráfica guardada: {destino}")
+            guardadas += 1
+        except Exception as exc:
+            print(f"No se pudo guardar la gráfica {indice}: {exc}")
+
+    print(f"\nSe guardaron {guardadas} de {len(figuras)} gráfica(s).")
 
 
 # ============================================================
@@ -196,7 +268,7 @@ def grafica_comparacion_y_diferencias(df, col_a, col_b, diferencias,
     axes[1].legend()
 
     plt.tight_layout()
-    plt.show()
+    # La visualización se realiza al final, después del guardado opcional.
 
 
 def grafica_intervalo_tstudent(diferencias, alpha=0.05):
@@ -271,7 +343,7 @@ def grafica_intervalo_tstudent(diferencias, alpha=0.05):
     ax.legend(loc="lower right")
 
     plt.tight_layout()
-    plt.show()
+    # La visualización se realiza al final, después del guardado opcional.
 
     return li, ls
 
@@ -348,7 +420,7 @@ def grafica_intervalo_wilcoxon(diferencias, alpha=0.05):
     ax.legend(loc="lower right")
 
     plt.tight_layout()
-    plt.show()
+    # La visualización se realiza al final, después del guardado opcional.
 
     return li, ls
 
@@ -711,4 +783,8 @@ with open(archivo_json, "w", encoding="utf-8") as f:
 
 print("\nResultados JSON guardados en:")
 print(archivo_json)
+
+# Guardado opcional y visualización final de las gráficas.
+guardar_graficas_opcional()
+plt.show()
 
