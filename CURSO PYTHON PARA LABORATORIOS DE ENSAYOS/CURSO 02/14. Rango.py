@@ -1,5 +1,6 @@
 import pandas as pd
 import json
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -81,6 +82,64 @@ def obtener_replicas(df):
         raise ValueError("La hoja no contiene datos numéricos.")
 
     return valores
+
+
+
+
+# ============================================================
+# GUARDADO OPCIONAL DE GRÁFICAS COMO IMÁGENES PNG
+# ============================================================
+
+def guardar_graficas_opcional():
+    """Permite guardar las figuras abiertas como PNG a 300 dpi."""
+    respuesta = input(
+        "\n¿Desea guardar la gráfica resumen como imagen PNG a 300 dpi? [S/N]: "
+    ).strip().lower()
+
+    if respuesta not in ("s", "si", "sí", "y", "yes"):
+        return
+
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        raiz = tk.Tk()
+        raiz.withdraw()
+        raiz.attributes("-topmost", True)
+        carpeta_destino = filedialog.askdirectory(
+            title="Seleccione la carpeta para guardar la gráfica resumen"
+        )
+        raiz.destroy()
+    except Exception as exc:
+        print(f"No se pudo abrir el selector de carpetas: {exc}")
+        return
+
+    if not carpeta_destino:
+        print("No se seleccionó una carpeta. No se guardó la gráfica.")
+        return
+
+    base_archivo = archivo.stem
+    base_archivo = re.sub(r'[<>:"/\\\\|?*]+', "_", base_archivo).strip(" ._")
+    if not base_archivo:
+        base_archivo = "Rango_metodo"
+
+    figuras = [plt.figure(n) for n in plt.get_fignums()]
+    if not figuras:
+        print("No hay gráficas disponibles para guardar.")
+        return
+
+    guardadas = 0
+    for indice, figura in enumerate(figuras, start=1):
+        nombre_png = f"{base_archivo}_Rango_metodo_Resumen_{indice:02d}.png"
+        destino = Path(carpeta_destino) / nombre_png
+        try:
+            figura.savefig(destino, dpi=300, bbox_inches="tight", format="png")
+            print(f"Gráfica guardada: {destino}")
+            guardadas += 1
+        except Exception as exc:
+            print(f"No se pudo guardar la gráfica: {exc}")
+
+    print(f"\nSe guardaron {guardadas} de {len(figuras)} gráfica(s).")
 
 
 # ------------------------------------------------------------
@@ -458,7 +517,7 @@ for spine in ax.spines.values():
 ax.grid(False)
 
 plt.tight_layout()
-plt.show()
+# La gráfica se muestra al final, después del guardado opcional.
 
 print("\\nEstudio finalizado.")
 
@@ -506,3 +565,6 @@ with open(ruta_json, "w", encoding="utf-8") as archivo_json:
     json.dump(datos_json, archivo_json, ensure_ascii=False, indent=4, allow_nan=False)
 
 print(f"Resultados JSON guardados en: {ruta_json}")
+
+guardar_graficas_opcional()
+plt.show()
