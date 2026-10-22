@@ -1,0 +1,690 @@
+# -*- coding: utf-8 -*-
+"""
+GENERADOR AUTOMÁTICO DE INFORME WORD — VALIDACIÓN DE MÉTODOS QUÍMICOS
+Lee:
+  1) Datos_Base_Validacion.xlsx (o Datos_Base_Validación.xlsx)
+  2) Todos los archivos .json de la carpeta configurada
+Genera:
+  Informe_Validacion_Metodo.docx
+
+IMPORTANTE:
+- No recalcula resultados estadísticos.
+- Los resultados se transcriben desde los JSON de los módulos.
+- No declara automáticamente que un método está validado.
+- Si faltan JSON, los informa en el apartado de disponibilidad.
+"""
+
+from pathlib import Path
+import json
+import math
+import re
+import sys
+from datetime import date, datetime
+
+from openpyxl import load_workbook
+from docx import Document
+from docx.shared import Inches, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+
+
+# ============================================================
+# CONFIGURACIÓN: MODIFICA ESTA RUTA SOLO SI CAMBIA LA CARPETA
+# ============================================================
+CARPETA_TRABAJO = Path(
+    r"D:\Ciencia_de_Datos\Validación de métodos químicos"
+)
+ARCHIVOS_EXCEL_BASE = [
+    "Datos_Base_Validacion.xlsx",
+    "Datos_Base_Validación.xlsx",
+    "Datos_Base_Validacion.xlsm",
+    "Datos_Base_Validación.xlsm",
+]
+NOMBRE_WORD = "Informe_Validacion_Metodo.docx"
+CARPETA_GRAFICAS = None  # Se selecciona al ejecutar el generador.
+
+# Estilo corporativo sobrio: azul oscuro, rojo y dorado.
+AZUL = "1F4E78"
+ROJO = "C62828"
+DORADO = "C9A227"
+GRIS = "666666"
+GRIS_CLARO = "F2F2F2"
+BLANCO = "FFFFFF"
+
+
+# ============================================================
+# UTILIDADES DE FORMATO
+# ============================================================
+def aplicar_sombreado_celda(celda, color):
+    tc_pr = celda._tc.get_or_add_tcPr()
+    shd = tc_pr.find(qn("w:shd"))
+    if shd is None:
+        shd = OxmlElement("w:shd")
+        tc_pr.append(shd)
+    shd.set(qn("w:fill"), color)
+
+
+def repetir_fila_encabezado(fila):
+    tr_pr = fila._tr.get_or_add_trPr()
+    tbl_header = OxmlElement("w:tblHeader")
+    tbl_header.set(qn("w:val"), "true")
+    tr_pr.append(tbl_header)
+
+
+def configurar_documento(doc):
+    section = doc.sections[0]
+    section.top_margin = Inches(0.7)
+    section.bottom_margin = Inches(0.65)
+    section.left_margin = Inches(0.75)
+    section.right_margin = Inches(0.75)
+
+    styles = doc.styles
+    styles["Normal"].font.name = "Aptos"
+    styles["Normal"].font.size = Pt(9)
+    styles["Normal"].font.color.rgb = RGBColor(45, 45, 45)
+    for name, size in [("Title", 25), ("Heading 1", 16), ("Heading 2", 12), ("Heading 3", 10)]:
+        styles[name].font.name = "Aptos Display"
+        styles[name].font.size = Pt(size)
+        styles[name].font.bold = True
+        styles[name].font.color.rgb = RGBColor.from_string(AZUL)
+
+    header = section.header.paragraphs[0]
+    header.text = "INFORME DE VALIDACIÓN DE MÉTODO DE ENSAYO"
+    header.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    for run in header.runs:
+        run.font.name = "Aptos"
+        run.font.size = Pt(8)
+        run.font.color.rgb = RGBColor.from_string(GRIS)
+
+    footer = section.footer.paragraphs[0]
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = footer.add_run("Documento generado a partir de los datos base y resultados JSON del estudio")
+    run.font.size = Pt(8)
+    run.font.color.rgb = RGBColor.from_string(GRIS)
+
+
+def agregar_numero_pagina(doc):
+    # Agrega número de página al pie, compatible con Word.
+    for section in doc.sections:
+        p = section.footer.paragraphs[0]
+        p.add_run("   |   Página ")
+        fld = OxmlElement("w:fldSimple")
+        fld.set(qn("w:instr"), "PAGE")
+        p._p.append(fld)
+
+
+def texto_seguro(valor):
+    if valor is None:
+        return "No consignado"
+    if isinstance(valor, bool):
+        return "Sí" if valor else "No"
+    if isinstance(valor, float):
+        if not math.isfinite(valor):
+            return "No disponible"
+        return f"{valor:.6g}"
+    if isinstance(valor, (int, str)):
+        return str(valor)
+    if isinstance(valor, (date, datetime)):
+        return valor.strftime("%Y-%m-%d")
+    if isinstance(valor, list):
+        return "; ".join(texto_seguro(x) for x in valor) if valor else "Sin datos"
+    if isinstance(valor, dict):
+        return "; ".join(f"{k}: {texto_seguro(v)}" for k, v in valor.items()) if valor else "Sin datos"
+    return str(valor)
+
+
+def nombre_legible(texto):
+    texto = str(texto)
+    texto = texto.replace("_", " ").replace("%RSD", "%RSD")
+    texto = re.sub(r"(?<!^)(?=[A-ZÁÉÍÓÚÑ])", " ", texto)
+    return texto[:1].upper() + texto[1:]
+
+
+def agregar_titulo(doc, texto, nivel=1):
+    doc.add_heading(texto, level=nivel)
+
+
+def agregar_tabla(doc, encabezados, filas, anchos=None):
+    if not encabezados:
+        return
+    tabla = doc.add_table(rows=1, cols=len(encabezados))
+    tabla.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tabla.style = "Table Grid"
+    tabla.autofit = True
+
+    hdr = tabla.rows[0]
+    repetir_fila_encabezado(hdr)
+    for i, titulo in enumerate(encabezados):
+        celda = hdr.cells[i]
+        celda.text = str(titulo)
+        aplicar_sombreado_celda(celda, AZUL)
+        celda.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        for p in celda.paragraphs:
+            for r in p.runs:
+                r.bold = True
+                r.font.color.rgb = RGBColor.from_string(BLANCO)
+                r.font.size = Pt(8)
+
+    for idx, fila in enumerate(filas):
+        cells = tabla.add_row().cells
+        for i, valor in enumerate(fila):
+            cells[i].text = texto_seguro(valor)
+            cells[i].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            if idx % 2 == 1:
+                aplicar_sombreado_celda(cells[i], GRIS_CLARO)
+            for p in cells[i].paragraphs:
+                for r in p.runs:
+                    r.font.size = Pt(8)
+
+    doc.add_paragraph()
+    return tabla
+
+
+def leer_excel_base(ruta_excel):
+    """
+    Devuelve:
+      datos_generales: dict campo -> valor
+      registros: lista de (nombre_hoja, encabezados, filas)
+    Soporta la estructura de la plantilla y hojas con encabezados en fila 4.
+    """
+    wb = load_workbook(ruta_excel, data_only=True, read_only=True)
+    datos_generales = {}
+    registros = []
+
+    for ws in wb.worksheets:
+        if ws.title == "01_Datos_Generales":
+            # Plantilla: encabezados en fila 4, datos desde fila 5.
+            for row in ws.iter_rows(min_row=5, values_only=True):
+                if not row or row[0] is None:
+                    continue
+                campo = str(row[0]).strip()
+                valor = row[1] if len(row) > 1 else None
+                if campo:
+                    datos_generales[campo] = valor
+        elif ws.title == "00_Instrucciones":
+            continue
+        else:
+            # Busca la fila que contiene encabezados, preferentemente fila 4.
+            encabezados = []
+            filas = []
+            fila_inicio = 4
+            for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 8), values_only=True):
+                no_vacios = [x for x in row if x is not None and str(x).strip()]
+                if len(no_vacios) >= 2:
+                    encabezados = [str(x).strip() if x is not None else "" for x in row]
+                    fila_inicio = ws._current_row if False else 4
+                    break
+            # La plantilla usa fila 4; leerla directamente.
+            raw_headers = [c.value for c in ws[4]]
+            if any(x is not None for x in raw_headers):
+                encabezados = [str(x).strip() if x is not None else "" for x in raw_headers]
+                for row in ws.iter_rows(min_row=5, values_only=True):
+                    if not any(v is not None for v in row):
+                        continue
+                    filas.append(list(row[:len(encabezados)]))
+            if encabezados and filas:
+                registros.append((ws.title, encabezados, filas))
+
+    wb.close()
+    return datos_generales, registros
+
+
+def recorrer_json(obj, prefijo=""):
+    """Convierte un JSON anidado en pares ruta/valor, sin modificar su contenido."""
+    pares = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            ruta = f"{prefijo}.{k}" if prefijo else str(k)
+            if isinstance(v, (dict, list)):
+                pares.extend(recorrer_json(v, ruta))
+            else:
+                pares.append((ruta, v))
+    elif isinstance(obj, list):
+        if obj and all(isinstance(x, dict) for x in obj):
+            # La lista tabular se gestiona aparte en agregar_json_al_informe.
+            return [(prefijo, obj)]
+        for i, v in enumerate(obj):
+            ruta = f"{prefijo}[{i+1}]"
+            if isinstance(v, (dict, list)):
+                pares.extend(recorrer_json(v, ruta))
+            else:
+                pares.append((ruta, v))
+    else:
+        pares.append((prefijo, obj))
+    return pares
+
+
+def encontrar_listas_de_registros(obj, ruta=""):
+    encontrados = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            subruta = f"{ruta}.{k}" if ruta else str(k)
+            if isinstance(v, list) and v and all(isinstance(x, dict) for x in v):
+                encontrados.append((subruta, v))
+            else:
+                encontrados.extend(encontrar_listas_de_registros(v, subruta))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            if isinstance(v, (dict, list)):
+                encontrados.extend(encontrar_listas_de_registros(v, f"{ruta}[{i+1}]"))
+    return encontrados
+
+
+def clave_normalizada(texto):
+    texto = str(texto).lower()
+    texto = re.sub(r"resultados?_|con_json|sin_fecha_hora|\.json|\.py", " ", texto)
+    texto = re.sub(r"[^a-z0-9áéíóúñ]+", " ", texto)
+    return " ".join(texto.split())
+
+
+def asignar_graficas_a_json(ruta_json, todos_json):
+    """Asigna imágenes al JSON más parecido por nombre de módulo."""
+    if CARPETA_GRAFICAS is None or not CARPETA_GRAFICAS.exists():
+        return []
+    alias = {
+        "resultados_repetibilidad": ["repetibilidad"],
+        "resultados_precision_intermedia": ["precision intermedia"],
+        "resultados_veracidad_mrc": ["veracidad mrc"],
+        "resultados_veracidad_intervalo": ["veracidad intervalo"],
+        "resultados_veracidad_caso_c1": ["veracidad caso c1"],
+        "resultados_veracidad_caso_c2": ["veracidad caso c2"],
+        "resultados_ldm_lcm_eurachem": ["ldm lcm eurachem"],
+        "resultados_ldm_lcm": ["ldm lcm"],
+        "resultados_linealidad_sensibilidad": ["linealidad sensibilidad"],
+        "resultados_selectividad_danzer": ["selectividad danzer"],
+        "resultados_selectividad_blancos": ["selectividad blancos"],
+        "resultados_selectividad_comparativo": ["selectividad comparativo"],
+        "resultados_rango_metodo": ["rango"],
+        "resultados_robustez_youden_steiner": ["robustez youden steiner"],
+    }
+    jstem = ruta_json.stem.lower()
+    jkey = next((k for k in alias if k in jstem), jstem)
+    target_phrases = alias.get(jkey, [clave_normalizada(ruta_json.stem)])
+    # Busca también dentro de subcarpetas por si los módulos se ejecutaron desde
+    # scripts_modulos/Graficas_Validacion en lugar de la carpeta principal.
+    all_images = sorted(
+        p for p in CARPETA_GRAFICAS.rglob("*")
+        if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg"}
+    )
+    selected = []
+    for img in all_images:
+        name = clave_normalizada(img.stem)
+        # Explicit priority for the two LDM/LCM modules, which share tokens.
+        if "ldm_lcm_eurachem" in jstem and "eurachem" not in name:
+            continue
+        if "ldm_lcm" in jstem and "eurachem" not in jstem and "eurachem" in name:
+            continue
+        if any(phrase in name for phrase in target_phrases):
+            selected.append(img)
+    # Fallback por tokens para nombres de imagen con prefijos del archivo Excel.
+    if not selected:
+        tokens = [
+            t for t in clave_normalizada(ruta_json.stem).split()
+            if t not in {"resultados", "json", "sin", "fecha", "hora", "con"}
+        ]
+        for img in all_images:
+            n = clave_normalizada(img.stem)
+            if tokens and sum(t in n for t in tokens) >= max(1, min(2, len(tokens))):
+                selected.append(img)
+
+    # Evita insertar duplicados y mantiene el orden alfabético.
+    return list(dict.fromkeys(selected))
+
+
+def insertar_graficas(doc, ruta_json, todos_json):
+    imagenes = asignar_graficas_a_json(ruta_json, todos_json)
+    if not imagenes:
+        return 0
+    agregar_titulo(doc, "Gráficas del estudio", nivel=2)
+    for i, imagen in enumerate(imagenes, start=1):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(f"Gráfica {i}: {imagen.stem}")
+        run.bold = True
+        run.font.size = Pt(8)
+        run.font.color.rgb = RGBColor.from_string(GRIS)
+        p_img = doc.add_paragraph()
+        p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_img.add_run().add_picture(str(imagen), width=Inches(6.2))
+    return len(imagenes)
+
+
+def agregar_robustez_ordenada(doc, datos):
+    """Presenta Robustez en tablas separadas por nivel y con una fila por factor."""
+    registros = datos.get("resultados_por_factor", []) if isinstance(datos, dict) else []
+    if not registros:
+        # Compatibilidad con otros nombres de lista dentro del JSON.
+        for _, lista in encontrar_listas_de_registros(datos):
+            if lista and all("Factor" in x and "Nivel" in x for x in lista):
+                registros = lista
+                break
+    if not registros:
+        return False
+    agregar_titulo(doc, "Resumen de robustez por nivel", nivel=2)
+    for nivel in dict.fromkeys(str(x.get("Nivel", "Nivel no identificado")) for x in registros):
+        bloque = [x for x in registros if str(x.get("Nivel", "Nivel no identificado")) == nivel]
+        concentracion = bloque[0].get("Concentración", "No consignada")
+        critico = bloque[0].get("Efecto crítico", "No consignado")
+        agregar_titulo(doc, f"{nivel} — Concentración: {texto_seguro(concentracion)}", nivel=3)
+        filas = []
+        for x in bloque:
+            filas.append([
+                x.get("Factor"), x.get("Media (+)"), x.get("Media (-)"),
+                x.get("Efecto"), x.get("|Efecto|"), x.get("Efecto relativo (%)"),
+                x.get("Efecto crítico", critico), x.get("Evaluación")
+            ])
+        agregar_tabla(doc,
+            ["Factor", "Media (+)", "Media (-)", "Efecto", "|Efecto|", "Efecto rel. (%)", "Efecto crítico", "Evaluación"],
+            filas)
+    if isinstance(datos, dict) and datos.get("interpretacion_general"):
+        p = doc.add_paragraph()
+        r = p.add_run("Interpretación general: ")
+        r.bold = True
+        p.add_run(texto_seguro(datos["interpretacion_general"]))
+    return True
+
+
+def agregar_json_al_informe(doc, ruta_json, indice, todos_json):
+    with ruta_json.open("r", encoding="utf-8-sig") as f:
+        datos = json.load(f)
+
+    es_linealidad = "linealidad" in ruta_json.stem.lower()
+    es_robustez = "robustez" in ruta_json.stem.lower()
+    titulo = nombre_legible(ruta_json.stem.replace("resultados_", ""))
+    agregar_titulo(doc, f"{indice}. {titulo}", nivel=1)
+    p = doc.add_paragraph()
+    r = p.add_run(f"Archivo fuente: {ruta_json.name}")
+    r.italic = True
+    r.font.size = Pt(8)
+    r.font.color.rgb = RGBColor.from_string(GRIS)
+
+    if es_robustez:
+        agregar_robustez_ordenada(doc, datos)
+    else:
+        if isinstance(datos, dict):
+            escalares = [(k, v) for k, v in datos.items() if not isinstance(v, (dict, list))]
+            if escalares:
+                agregar_titulo(doc, "Resumen del módulo", nivel=2)
+                agregar_tabla(doc, ["Campo", "Valor"], escalares)
+
+        listas = encontrar_listas_de_registros(datos)
+        for ruta, lista in listas:
+            ruta_lower = ruta.lower()
+            if es_linealidad and ("diagnostico" in ruta_lower or "diagnóstico" in ruta_lower):
+                continue
+            claves = []
+            for item in lista:
+                for k in item.keys():
+                    if k not in claves:
+                        claves.append(k)
+            if not claves:
+                continue
+            agregar_titulo(doc, f"Detalle: {nombre_legible(ruta)}", nivel=2)
+            filas = [[item.get(k) for k in claves] for item in lista]
+            bloque = 6
+            for inicio in range(0, len(claves), bloque):
+                subclaves = claves[inicio:inicio+bloque]
+                subfilas = [[item.get(k) for k in subclaves] for item in lista]
+                agregar_tabla(doc, subclaves, subfilas)
+
+        # Linealidad: se excluye por completo el volcado de parámetros anidados.
+        if not es_linealidad:
+            pares = []
+            if isinstance(datos, dict):
+                for k, v in datos.items():
+                    if not isinstance(v, (dict, list)):
+                        continue
+                    if isinstance(v, list) and v and all(isinstance(x, dict) for x in v):
+                        continue
+                    pares.extend(recorrer_json(v, str(k)))
+            if pares:
+                agregar_titulo(doc, "Otros parámetros y resultados", nivel=2)
+                agregar_tabla(doc, ["Ruta del dato", "Valor"], pares)
+
+    # Insertar todas las gráficas guardadas por el script del módulo.
+    insertar_graficas(doc, ruta_json, todos_json)
+    doc.add_paragraph(
+        "Nota: este apartado reproduce los resultados exportados por el módulo. "
+        "La conclusión global del método debe considerar conjuntamente el alcance, "
+        "los criterios preestablecidos, los resultados y las evaluaciones pendientes."
+    )
+
+def buscar_excel_base(carpeta):
+    for nombre in ARCHIVOS_EXCEL_BASE:
+        candidato = carpeta / nombre
+        if candidato.exists():
+            return candidato
+    candidatos = [
+        p for p in carpeta.glob("Datos_Base*")
+        if p.suffix.lower() in {".xlsx", ".xlsm"}
+    ]
+    return candidatos[0] if candidatos else None
+
+
+def seleccionar_carpeta_graficas():
+    """Solicita la carpeta donde están guardadas las gráficas de los módulos."""
+    import tkinter as tk
+    from tkinter import filedialog
+
+    raiz = tk.Tk()
+    raiz.withdraw()
+    raiz.attributes("-topmost", True)
+    carpeta = filedialog.askdirectory(
+        title="Seleccione la carpeta que contiene las gráficas de las pruebas"
+    )
+    raiz.destroy()
+
+    if not carpeta:
+        raise FileNotFoundError(
+            "No se seleccionó la carpeta de gráficas. No se generó el informe."
+        )
+    ruta = Path(carpeta)
+    if not ruta.exists() or not ruta.is_dir():
+        raise FileNotFoundError(f"La carpeta de gráficas no existe: {ruta}")
+    return ruta
+
+
+def main():
+    global CARPETA_GRAFICAS
+    print("\\nSeleccione la carpeta donde guardó las imágenes de las pruebas.")
+    CARPETA_GRAFICAS = seleccionar_carpeta_graficas()
+    print(f"Carpeta de gráficas seleccionada: {CARPETA_GRAFICAS}")
+
+    if not CARPETA_TRABAJO.exists():
+        raise FileNotFoundError(
+            f"No existe la carpeta configurada:\n{CARPETA_TRABAJO}\n"
+            "Edita CARPETA_TRABAJO al inicio del script."
+        )
+
+    ruta_excel = buscar_excel_base(CARPETA_TRABAJO)
+    if ruta_excel is None:
+        raise FileNotFoundError(
+            "No se encontró Datos_Base_Validacion.xlsx ni Datos_Base_Validación.xlsx "
+            f"en:\n{CARPETA_TRABAJO}"
+        )
+
+    archivos_json = sorted(
+        p for p in CARPETA_TRABAJO.glob("*.json")
+        if p.is_file() and p.name.lower() != "manifest.json"
+    )
+    if not archivos_json:
+        raise FileNotFoundError(
+            f"No se encontraron archivos JSON en:\n{CARPETA_TRABAJO}\n"
+            "Verifica que los scripts de análisis hayan generado los JSON en esta carpeta."
+        )
+
+    datos_generales, registros = leer_excel_base(ruta_excel)
+    doc = Document()
+    configurar_documento(doc)
+
+    # PORTADA
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(85)
+    run = p.add_run("INFORME DE VALIDACIÓN\nDE MÉTODO DE ENSAYO")
+    run.bold = True
+    run.font.name = "Aptos Display"
+    run.font.size = Pt(25)
+    run.font.color.rgb = RGBColor.from_string(AZUL)
+
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = p.add_run(texto_seguro(datos_generales.get("metodo_nombre", "Método no consignado")))
+    r.font.size = Pt(16)
+    r.font.bold = True
+    r.font.color.rgb = RGBColor.from_string(ROJO)
+
+    portada = [
+        ("Laboratorio", datos_generales.get("laboratorio_nombre")),
+        ("Código del método", datos_generales.get("metodo_codigo")),
+        ("Analito", datos_generales.get("analito")),
+        ("Matriz", datos_generales.get("matriz")),
+        ("Rango evaluado", f"{texto_seguro(datos_generales.get('rango_desde'))} a {texto_seguro(datos_generales.get('rango_hasta'))} {texto_seguro(datos_generales.get('unidad_rango'))}"),
+        ("Código del informe", datos_generales.get("codigo_informe")),
+        ("Estado del documento", datos_generales.get("estado_documento")),
+    ]
+    doc.add_paragraph()
+    agregar_tabla(doc, ["Identificación", "Dato"], portada)
+    doc.add_page_break()
+
+    # 1. Objetivo y alcance
+    agregar_titulo(doc, "1. Objetivo y alcance", nivel=1)
+    agregar_tabla(doc, ["Campo", "Descripción"], [
+        ("Objetivo del estudio", datos_generales.get("objetivo_estudio")),
+        ("Alcance del estudio", datos_generales.get("alcance_estudio")),
+        ("Técnica", datos_generales.get("tecnica")),
+        ("Unidad del resultado", datos_generales.get("unidad_resultado")),
+        ("Documento de referencia del método", datos_generales.get("documento_referencia_metodo")),
+        ("Norma principal", datos_generales.get("norma_principal")),
+        ("Observaciones generales", datos_generales.get("observaciones_generales")),
+    ])
+
+    # 2. Identificación del método/laboratorio
+    agregar_titulo(doc, "2. Identificación del laboratorio y del método", nivel=1)
+    campos_identificacion = [
+        ("Nombre del laboratorio", "laboratorio_nombre"),
+        ("Área", "laboratorio_area"),
+        ("Dirección", "laboratorio_direccion"),
+        ("Código del laboratorio", "laboratorio_codigo"),
+        ("Nombre del método", "metodo_nombre"),
+        ("Código del método", "metodo_codigo"),
+        ("Versión del método", "metodo_version"),
+        ("Analito / mensurando", "analito"),
+        ("Matriz", "matriz"),
+        ("Técnica", "tecnica"),
+        ("Unidad", "unidad_resultado"),
+        ("Rango inferior", "rango_desde"),
+        ("Rango superior", "rango_hasta"),
+        ("Unidad del rango", "unidad_rango"),
+    ]
+    agregar_tabla(doc, ["Campo", "Información"], [
+        (etiqueta, datos_generales.get(clave)) for etiqueta, clave in campos_identificacion
+    ])
+
+    # 3. Personal y responsabilidades
+    agregar_titulo(doc, "3. Responsables y personal participante", nivel=1)
+    agregar_tabla(doc, ["Responsabilidad", "Nombre"], [
+        ("Responsable técnico", datos_generales.get("responsable_tecnico")),
+        ("Elaborado por", datos_generales.get("elaborado_por")),
+        ("Revisado por", datos_generales.get("revisado_por")),
+        ("Aprobado por", datos_generales.get("aprobado_por")),
+    ])
+    for nombre_hoja, encabezados, filas in registros:
+        if "analista" in nombre_hoja.lower() or "personal" in nombre_hoja.lower():
+            agregar_titulo(doc, nombre_legible(nombre_hoja), nivel=2)
+            agregar_tabla(doc, encabezados, filas)
+
+    # 4. Equipos, calibraciones, MRC, reactivos y referencias
+    agregar_titulo(doc, "4. Recursos y trazabilidad documental", nivel=1)
+    for nombre_hoja, encabezados, filas in registros:
+        if any(x in nombre_hoja.lower() for x in ["equipo", "calibr", "mrc", "reactivo", "referencia"]):
+            agregar_titulo(doc, nombre_legible(nombre_hoja), nivel=2)
+            agregar_tabla(doc, encabezados, filas)
+
+    # 5. Criterios de aceptación
+    agregar_titulo(doc, "5. Criterios de aceptación documentados", nivel=1)
+    criterios_encontrados = False
+    for nombre_hoja, encabezados, filas in registros:
+        if "criterio" in nombre_hoja.lower():
+            criterios_encontrados = True
+            agregar_tabla(doc, encabezados, filas)
+    if not criterios_encontrados:
+        doc.add_paragraph(
+            "No se encontró una hoja de criterios en el archivo base. "
+            "Verifique que los criterios de aceptación estén documentados y aprobados."
+        )
+
+    # 6. Resultados estadísticos exportados por los módulos
+    doc.add_page_break()
+    agregar_titulo(doc, "6. Resultados de los estudios de validación", nivel=1)
+    doc.add_paragraph(
+        f"Se localizaron {len(archivos_json)} archivo(s) JSON en la carpeta de trabajo. "
+        "Los datos que siguen se transcriben desde dichos archivos; el generador no recalcula "
+        "estadísticos ni modifica criterios. Las imágenes se insertan desde la carpeta de gráficas seleccionada al iniciar."
+    )
+    imagenes_disponibles = [
+        p for p in CARPETA_GRAFICAS.rglob("*")
+        if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg"}
+    ] if CARPETA_GRAFICAS is not None and CARPETA_GRAFICAS.exists() else []
+    if not imagenes_disponibles:
+        aviso = doc.add_paragraph()
+        aviso.add_run("AVISO: No se encontraron imágenes PNG. ").bold = True
+        aviso.add_run(
+            "Ejecute los módulos de análisis para guardar las gráficas y seleccione la carpeta que las contiene."
+        )
+
+    for i, ruta_json in enumerate(archivos_json, start=1):
+        try:
+            agregar_json_al_informe(doc, ruta_json, i, archivos_json)
+        except Exception as exc:
+            agregar_titulo(doc, f"{i}. {ruta_json.name}", nivel=1)
+            doc.add_paragraph(
+                f"No fue posible interpretar este JSON: {exc}. "
+                "Revise el archivo fuente antes de emitir el informe."
+            )
+
+    # 7. Disponibilidad y pendientes
+    doc.add_page_break()
+    agregar_titulo(doc, "7. Disponibilidad documental y aspectos por revisar", nivel=1)
+    agregar_tabla(doc, ["Elemento", "Estado"], [
+        ("Archivo base", f"Leído: {ruta_excel.name}"),
+        ("Archivos JSON encontrados", len(archivos_json)),
+        ("Carpeta de gráficas", f"{len(imagenes_disponibles)} imagen(es) encontradas en: {CARPETA_GRAFICAS if CARPETA_GRAFICAS else 'No seleccionada'}"),
+        ("Archivos JSON procesados", "Revisar las secciones del capítulo 6 y los mensajes de ejecución."),
+        ("Conclusión final de validación", "Debe ser revisada y aprobada por el responsable técnico; no se infiere automáticamente."),
+    ])
+    doc.add_paragraph(
+        "Antes de aprobar el informe, confirme que los estudios requeridos para el alcance definido "
+        "estén completos, que los criterios hayan sido establecidos previamente y que las desviaciones, "
+        "resultados no conformes y evaluaciones pendientes estén documentados."
+    )
+
+    # 8. Firmas
+    agregar_titulo(doc, "8. Revisión y aprobación", nivel=1)
+    agregar_tabla(doc, ["Actividad", "Nombre", "Firma / constancia"], [
+        ("Elaboración", datos_generales.get("elaborado_por"), ""),
+        ("Revisión", datos_generales.get("revisado_por"), ""),
+        ("Aprobación", datos_generales.get("aprobado_por"), ""),
+    ])
+
+    salida = CARPETA_TRABAJO / NOMBRE_WORD
+    agregar_numero_pagina(doc)
+    doc.save(salida)
+
+    print("=" * 72)
+    print("INFORME WORD GENERADO")
+    print(f"Archivo base: {ruta_excel}")
+    print(f"JSON encontrados: {len(archivos_json)}")
+    print(f"Salida: {salida}")
+    print("=" * 72)
+    print("Importante: revise el informe y sus conclusiones antes de aprobarlo.")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        print(f"\nERROR: {error}")
+        sys.exit(1)
