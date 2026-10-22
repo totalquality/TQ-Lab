@@ -61,6 +61,9 @@ archivo = Path(
 ALPHA = 0.05
 FACTOR_CRITICO = 2.24
 
+# Registro de gráficas para guardado opcional al finalizar.
+graficas_generadas = []
+
 # Paleta para las gráficas
 COLORES = [
     "#C62828", "#1565C0", "#2E7D32", "#EF6C00",
@@ -307,7 +310,7 @@ def grafico_efectos_principales(
     )
 
     plt.tight_layout()
-    plt.show()
+    graficas_generadas.append((fig, "efectos_principales", nivel_nombre, concentracion))
 
 
 def grafico_pareto(
@@ -366,8 +369,7 @@ def grafico_pareto(
     ax.grid(axis="x", alpha=0.25)
 
     plt.tight_layout()
-    plt.show()
-
+    graficas_generadas.append((fig, "pareto_efectos", nivel_nombre, concentracion))
 
 
 # ============================================================
@@ -481,7 +483,7 @@ def grafico_efecto_relativo(resultados, nivel_nombre, concentracion):
         bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="#777777")
     )
     plt.tight_layout()
-    plt.show()
+    graficas_generadas.append((fig, "efecto_relativo_FAO", nivel_nombre, concentracion))
 
 
 # ============================================================
@@ -778,3 +780,48 @@ with ruta_json.open("w", encoding="utf-8") as archivo_json:
     )
 
 print(f"\nResultados JSON exportados en:\n{ruta_json}")
+
+
+# ============================================================
+# GUARDADO OPCIONAL DE GRÁFICAS COMO PNG A 300 DPI
+# ============================================================
+
+respuesta_guardado = input(
+    "\n¿Desea guardar las gráficas como imágenes PNG a 300 dpi? [S/N]: "
+).strip().upper()
+
+if respuesta_guardado == "S":
+    import tkinter as tk
+    from tkinter import filedialog
+
+    raiz = tk.Tk()
+    raiz.withdraw()
+    carpeta_seleccionada = filedialog.askdirectory(
+        title="Seleccione la carpeta donde guardar las gráficas"
+    )
+    raiz.destroy()
+
+    if carpeta_seleccionada:
+        carpeta_salida = Path(carpeta_seleccionada)
+        nombre_base = Path(archivo).stem
+
+        for numero, (fig, tipo_grafica, nivel_nombre, concentracion) in enumerate(
+            graficas_generadas, start=1
+        ):
+            concentracion_txt = f"{concentracion:g}".replace(".", "_")
+            nombre_png = (
+                f"{nombre_base}_{nivel_nombre}_{numero:02d}_"
+                f"{tipo_grafica}_concentracion_{concentracion_txt}.png"
+            )
+            ruta_png = carpeta_salida / nombre_png
+            fig.savefig(ruta_png, dpi=300, format="png", bbox_inches="tight")
+            print(f"Gráfica guardada: {ruta_png}")
+
+        print(f"\nSe guardaron {len(graficas_generadas)} gráfica(s) en:\n{carpeta_salida}")
+    else:
+        print("No se seleccionó ninguna carpeta. No se guardaron las gráficas.")
+else:
+    print("Guardado de gráficas omitido.")
+
+# Mostrar todas las gráficas al final, después de ofrecer el guardado opcional.
+plt.show()
