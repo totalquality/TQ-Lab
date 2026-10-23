@@ -187,7 +187,10 @@ def leer_excel_base(ruta_excel):
     Devuelve:
       datos_generales: dict campo -> valor
       registros: lista de (nombre_hoja, encabezados, filas)
-    Soporta la estructura de la plantilla y hojas con encabezados en fila 4.
+
+    La hoja 01_Datos_Generales tiene encabezados en fila 4 y datos desde fila 5.
+    Las hojas de tablas (analistas, equipos, calibraciones, etc.) tienen
+    encabezados en fila 3 y datos desde fila 4.
     """
     wb = load_workbook(ruta_excel, data_only=True, read_only=True)
     datos_generales = {}
@@ -195,7 +198,6 @@ def leer_excel_base(ruta_excel):
 
     for ws in wb.worksheets:
         if ws.title == "01_Datos_Generales":
-            # Plantilla: encabezados en fila 4, datos desde fila 5.
             for row in ws.iter_rows(min_row=5, values_only=True):
                 if not row or row[0] is None:
                     continue
@@ -206,24 +208,35 @@ def leer_excel_base(ruta_excel):
         elif ws.title == "00_Instrucciones":
             continue
         else:
-            # Busca la fila que contiene encabezados, preferentemente fila 4.
-            encabezados = []
+            # La plantilla usa fila 3 para los encabezados de las tablas.
+            # Se recurre a fila 4 únicamente si fila 3 no parece contener encabezados.
+            def contar_no_vacios(valores):
+                return sum(v is not None and str(v).strip() != "" for v in valores)
+
+            fila_encabezado = 3
+            valores_fila3 = [c.value for c in ws[3]]
+            if contar_no_vacios(valores_fila3) < 2:
+                fila_encabezado = 4
+
+            raw_headers = [c.value for c in ws[fila_encabezado]]
+            while raw_headers and raw_headers[-1] is None:
+                raw_headers.pop()
+            encabezados = [
+                str(x).strip() if x is not None else ""
+                for x in raw_headers
+            ]
+
             filas = []
-            fila_inicio = 4
-            for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 8), values_only=True):
-                no_vacios = [x for x in row if x is not None and str(x).strip()]
-                if len(no_vacios) >= 2:
-                    encabezados = [str(x).strip() if x is not None else "" for x in row]
-                    fila_inicio = ws._current_row if False else 4
-                    break
-            # La plantilla usa fila 4; leerla directamente.
-            raw_headers = [c.value for c in ws[4]]
-            if any(x is not None for x in raw_headers):
-                encabezados = [str(x).strip() if x is not None else "" for x in raw_headers]
-                for row in ws.iter_rows(min_row=5, values_only=True):
-                    if not any(v is not None for v in row):
+            if encabezados:
+                for row in ws.iter_rows(
+                    min_row=fila_encabezado + 1,
+                    values_only=True
+                ):
+                    valores = list(row[:len(encabezados)])
+                    if not any(v is not None and str(v).strip() != "" for v in valores):
                         continue
-                    filas.append(list(row[:len(encabezados)]))
+                    filas.append(valores)
+
             if encabezados and filas:
                 registros.append((ws.title, encabezados, filas))
 
@@ -537,13 +550,18 @@ def main():
     r.font.color.rgb = RGBColor.from_string(ROJO)
 
     portada = [
+        ("Tipo de documento", datos_generales.get("tipo_documento")),
+        ("Código del informe", datos_generales.get("codigo_informe")),
+        ("Versión del informe", datos_generales.get("version_informe")),
+        ("Estado del documento", datos_generales.get("estado_documento")),
+        ("Fecha de ejecución — desde", datos_generales.get("fecha_ejecucion_desde")),
+        ("Fecha de ejecución — hasta", datos_generales.get("fecha_ejecucion_hasta")),
+        ("Fecha del informe", datos_generales.get("fecha_informe")),
         ("Laboratorio", datos_generales.get("laboratorio_nombre")),
         ("Código del método", datos_generales.get("metodo_codigo")),
         ("Analito", datos_generales.get("analito")),
         ("Matriz", datos_generales.get("matriz")),
         ("Rango evaluado", f"{texto_seguro(datos_generales.get('rango_desde'))} a {texto_seguro(datos_generales.get('rango_hasta'))} {texto_seguro(datos_generales.get('unidad_rango'))}"),
-        ("Código del informe", datos_generales.get("codigo_informe")),
-        ("Estado del documento", datos_generales.get("estado_documento")),
     ]
     doc.add_paragraph()
     agregar_tabla(doc, ["Identificación", "Dato"], portada)
@@ -564,6 +582,13 @@ def main():
     # 2. Identificación del método/laboratorio
     agregar_titulo(doc, "2. Identificación del laboratorio y del método", nivel=1)
     campos_identificacion = [
+        ("Tipo de documento", "tipo_documento"),
+        ("Código del informe", "codigo_informe"),
+        ("Versión del informe", "version_informe"),
+        ("Estado del documento", "estado_documento"),
+        ("Fecha de ejecución desde", "fecha_ejecucion_desde"),
+        ("Fecha de ejecución hasta", "fecha_ejecucion_hasta"),
+        ("Fecha del informe", "fecha_informe"),
         ("Nombre del laboratorio", "laboratorio_nombre"),
         ("Área", "laboratorio_area"),
         ("Dirección", "laboratorio_direccion"),
